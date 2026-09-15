@@ -79,7 +79,7 @@ class TestGAMClient:
             credentials_path="/path/to/creds.json",
             network_code="12345678",
         )
-        assert client.api_version == "v202502"
+        assert client.api_version == GAMClient.DEFAULT_API_VERSION
 
     @patch("gam_mcp.client.oauth2.GoogleServiceAccountClient")
     @patch("gam_mcp.client.ad_manager.AdManagerClient")
@@ -96,7 +96,7 @@ class TestGAMClient:
         client.get_service("OrderService")
 
         mock_client_instance.GetService.assert_called_once_with(
-            "OrderService", version="v202502"
+            "OrderService", version=GAMClient.DEFAULT_API_VERSION
         )
 
     @patch("gam_mcp.client.ad_manager.StatementBuilder")
@@ -109,7 +109,9 @@ class TestGAMClient:
 
         client.create_statement()
 
-        mock_statement_builder.assert_called_once_with(version="v202502")
+        mock_statement_builder.assert_called_once_with(
+            version=GAMClient.DEFAULT_API_VERSION
+        )
 
 
 class TestGlobalClient:
@@ -146,6 +148,7 @@ class TestGlobalClient:
             "/path/to/creds.json",
             "12345678",
             "GAM MCP Server",
+            api_version=None,
         )
         assert result == mock_client
 
@@ -176,6 +179,7 @@ class TestGlobalClient:
             "/path/to/creds.json",
             "12345678",
             "Custom App",
+            api_version=None,
         )
 
 
@@ -224,7 +228,7 @@ class TestMultiNetworkClient:
         # Verify it was created with the right network code
         assert mock_gam_client_class.call_count == 2
         mock_gam_client_class.assert_called_with(
-            "/path/to/creds.json", "22222222", "GAM MCP Server"
+            "/path/to/creds.json", "22222222", "GAM MCP Server", api_version=None
         )
 
     @patch("gam_mcp.client.GAMClient")
