@@ -6,8 +6,13 @@ version bump, nor zeep objects being treated as dicts. This script exercises
 the read and write paths for real.
 
 It refuses to run against anything but a network GAM reports as a test network,
-and it archives everything it creates. GAM cannot delete creatives or
-companies, so it creates at most one creative per run and no companies.
+and it archives everything it creates.
+
+GAM offers no way to remove a creative - there is no delete action, and
+DeactivateCreatives needs the ACTIVATE_AND_DEACTIVATE_CREATIVES network feature,
+which is not enabled everywhere. Companies cannot be removed at all. So this
+script creates no companies and reuses its own creative across runs, leaving at
+most one behind however often it is run.
 
 Usage:
     GAM_CREDENTIALS_PATH=/path/to/sa.json \
@@ -59,10 +64,22 @@ def step(label, fn, expect_error=False):
     return result
 
 
+CREATIVE_NAME = "MCP-VERIFY reusable creative"
+
+
 def first_id(client, service, method, statement_limit=1):
     """Return the id of the first result from a paged getter."""
     svc = client.get_service(service)
     page = getattr(svc, method)(client.create_statement().Limit(statement_limit).ToStatement())
+    results = safe_get(page, "results") or []
+    return safe_get(results[0], "id") if results else None
+
+
+def reusable_creative_id(client):
+    """Find this script's creative from an earlier run, if it left one."""
+    statement = client.create_statement().Where("name = :name").WithBindVariable(
+        "name", CREATIVE_NAME).Limit(1)
+    page = client.get_service("CreativeService").getCreativesByStatement(statement.ToStatement())
     results = safe_get(page, "results") or []
     return safe_get(results[0], "id") if results else None
 
@@ -131,13 +148,21 @@ def main():
     step("resume_line_item (refused)",
          lambda: line_items.resume_line_item(line_item_id=line_item_id), expect_error=True)
 
-    creative = step("create_third_party_creative", lambda: creatives.create_third_party_creative(
-        advertiser_id=int(advertiser_id), name=f"{TAG} creative", width=300, height=250,
-        snippet='<div style="width:300px;height:250px">MCP verify</div>'))
-    if creative and "error" not in creative:
+    # Reuse the creative from an earlier run; only create one the first time.
+    creative_id = reusable_creative_id(client)
+    if creative_id:
+        print(f"  {'reusing creative':38s} ok  id={creative_id}")
+        step("get_creative", lambda: creatives.get_creative(creative_id=creative_id))
+    else:
+        created = step("create_third_party_creative", lambda: creatives.create_third_party_creative(
+            advertiser_id=int(advertiser_id), name=CREATIVE_NAME, width=300, height=250,
+            snippet='<div style="width:300px;height:250px">MCP verify</div>'))
+        creative_id = created["id"] if created and "error" not in created else None
+
+    if creative_id:
         step("associate_creative_with_line_item",
              lambda: creatives.associate_creative_with_line_item(
-                 creative_id=creative["id"], line_item_id=line_item_id))
+                 creative_id=creative_id, line_item_id=line_item_id))
         step("list_creatives_by_line_item",
              lambda: creatives.list_creatives_by_line_item(line_item_id=line_item_id))
 
@@ -151,8 +176,20 @@ def main():
         return {"numChanges": changes}
 
     step("archive order", archive_order)
-    if creative and "error" not in creative:
-        print(f"  note: creative {creative['id']} stays, GAM cannot delete creatives")
+
+    # The association can be deleted even though the creative cannot.
+    if creative_id:
+        def delete_association():
+            statement = client.create_statement().Where(
+                "lineItemId = :id").WithBindVariable("id", line_item_id)
+            changes = safe_get(client.get_service("LineItemCreativeAssociationService")
+                               .performLineItemCreativeAssociationAction(
+                                   {"xsi_type": "DeleteLineItemCreativeAssociations"},
+                                   statement.ToStatement()), "numChanges")
+            return {"numChanges": changes}
+
+        step("delete creative association", delete_association)
+        print(f"  note: creative {creative_id} is kept and reused by the next run")
 
     return finish()
 

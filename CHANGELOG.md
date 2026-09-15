@@ -21,7 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   API drift after a version bump, nor zeep objects being treated as dicts - all
   four bugs fixed in this release were found this way. The script refuses to run
   against a network GAM does not report as a test network, and archives what it
-  creates.
+  creates. It reuses its own creative across runs: GAM has no delete action for
+  creatives, and `DeactivateCreatives` needs the
+  `ACTIVATE_AND_DEACTIVATE_CREATIVES` network feature, which is not enabled
+  everywhere - so at most one creative is ever left behind, however often the
+  script runs. Creative associations are deleted, which the API does allow.
 - `approve_order` - approve an order so its line items can start delivering.
 
 ### Changed
