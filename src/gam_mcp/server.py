@@ -10,21 +10,22 @@ Reference: https://modelcontextprotocol.io/specification/draft/basic/security_be
 Reference: https://gofastmcp.com/python-sdk/fastmcp-server-auth-auth
 """
 
-import os
+import hmac
 import json
 import logging
+import os
 import secrets
-import hmac
-from typing import Optional
+from typing import Optional, Union
 
 # Use the standalone fastmcp package (has full middleware support)
-from fastmcp import FastMCP, Context
-from fastmcp.server.middleware import Middleware
-from fastmcp.server.dependencies import get_http_headers
+from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server.dependencies import get_http_headers
+from fastmcp.server.middleware import Middleware
 
-from .client import init_gam_client, get_gam_client, is_gam_client_initialized
-from .tools import orders, line_items, creatives, advertisers, verification, reporting
+from .client import init_gam_client, is_gam_client_initialized
+from .tools import advertisers, creatives, line_items, orders, reporting, verification
+from .utils import normalize_id
 
 # Authentication token - set via environment variable or generate random
 AUTH_TOKEN = os.environ.get("GAM_MCP_AUTH_TOKEN", None)
@@ -97,7 +98,7 @@ logger.info("Bearer token authentication middleware enabled")
 # =============================================================================
 
 @mcp.tool()
-def list_delivering_orders(network_code: Optional[str] = None) -> str:
+def list_delivering_orders(network_code: Union[str, int, None] = None) -> str:
     """List all orders with line items currently delivering ads.
 
     Args:
@@ -108,7 +109,7 @@ def list_delivering_orders(network_code: Optional[str] = None) -> str:
     including impression and click statistics.
     """
     init_client()
-    result = orders.list_delivering_orders(network_code=network_code)
+    result = orders.list_delivering_orders(network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
@@ -116,7 +117,7 @@ def list_delivering_orders(network_code: Optional[str] = None) -> str:
 def get_order(
     order_id: Optional[int] = None,
     order_name: Optional[str] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Get order details by ID or name.
 
@@ -129,7 +130,7 @@ def get_order(
     Returns order details including all line items.
     """
     init_client()
-    result = orders.get_order(order_id=order_id, order_name=order_name, network_code=network_code)
+    result = orders.get_order(order_id=order_id, order_name=order_name, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
@@ -137,7 +138,7 @@ def get_order(
 def create_order(
     order_name: str,
     advertiser_id: int,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Create a new order for an advertiser.
 
@@ -150,7 +151,7 @@ def create_order(
     Returns the created order details.
     """
     init_client()
-    result = orders.create_order(order_name=order_name, advertiser_id=advertiser_id, network_code=network_code)
+    result = orders.create_order(order_name=order_name, advertiser_id=advertiser_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
@@ -158,7 +159,7 @@ def create_order(
 def find_or_create_order(
     order_name: str,
     advertiser_id: int,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Find an existing order by name or create a new one.
 
@@ -171,7 +172,7 @@ def find_or_create_order(
     Returns the existing or newly created order.
     """
     init_client()
-    result = orders.find_or_create_order(order_name=order_name, advertiser_id=advertiser_id, network_code=network_code)
+    result = orders.find_or_create_order(order_name=order_name, advertiser_id=advertiser_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
@@ -180,7 +181,7 @@ def find_or_create_order(
 # =============================================================================
 
 @mcp.tool()
-def get_line_item(line_item_id: int, network_code: Optional[str] = None) -> str:
+def get_line_item(line_item_id: int, network_code: Union[str, int, None] = None) -> str:
     """Get line item details by ID.
 
     Args:
@@ -191,7 +192,7 @@ def get_line_item(line_item_id: int, network_code: Optional[str] = None) -> str:
     Returns line item details including status, dates, and statistics.
     """
     init_client()
-    result = line_items.get_line_item(line_item_id=line_item_id, network_code=network_code)
+    result = line_items.get_line_item(line_item_id=line_item_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
@@ -202,13 +203,13 @@ def create_line_item(
     end_year: int,
     end_month: int,
     end_day: int,
-    target_ad_unit_id: str,
+    target_ad_unit_id: Union[str, int],
     line_item_type: str = "STANDARD",
     goal_impressions: int = 100000,
     creative_sizes: Optional[str] = None,
     cost_per_unit_micro: int = 0,
-    currency_code: str = "MAD",
-    network_code: Optional[str] = None
+    currency_code: Optional[str] = None,
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Create a new line item for an order.
 
@@ -234,8 +235,8 @@ def create_line_item(
         goal_impressions: Impression goal (default: 100000)
         creative_sizes: JSON string of sizes, e.g. '[{"width": 300, "height": 250}, {"width": 728, "height": 90}]'
                        If not provided, uses defaults: 300x250, 300x600, 728x90, 1000x250
-        cost_per_unit_micro: Cost per unit in micro amounts (e.g., 1000000 = 1 MAD)
-        currency_code: Currency code (default: MAD)
+        cost_per_unit_micro: Cost per unit in micro amounts (e.g., 1000000 = 1.00 in the network currency)
+        currency_code: Currency code. Defaults to the network's own currency.
         network_code: Optional GAM network code to target a specific network.
             If not provided, uses the default network.
 
@@ -258,12 +259,12 @@ def create_line_item(
         end_month=end_month,
         end_day=end_day,
         line_item_type=line_item_type,
-        target_ad_unit_id=target_ad_unit_id,
+        target_ad_unit_id=normalize_id(target_ad_unit_id),
         goal_impressions=goal_impressions,
         creative_sizes=parsed_sizes,
         cost_per_unit_micro=cost_per_unit_micro,
         currency_code=currency_code,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -273,7 +274,7 @@ def duplicate_line_item(
     source_line_item_id: int,
     new_name: str,
     rename_source: Optional[str] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Duplicate an existing line item.
 
@@ -291,7 +292,7 @@ def duplicate_line_item(
         source_line_item_id=source_line_item_id,
         new_name=new_name,
         rename_source=rename_source,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -309,7 +310,7 @@ def update_line_item(
     end_year: Optional[int] = None,
     end_month: Optional[int] = None,
     end_day: Optional[int] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Update an existing line item's properties.
 
@@ -331,7 +332,7 @@ def update_line_item(
             Lower numbers = higher priority.
             SPONSORSHIP: 4, STANDARD: 6-10, NETWORK: 12, BULK: 12, PRICE_PRIORITY: 12, HOUSE: 16
         cost_per_unit_micro: Cost per unit in micro amounts (e.g., 1000000 = 1 currency unit)
-        currency_code: Currency code (e.g., MAD, USD, EUR)
+        currency_code: Currency code (e.g., CHF, EUR, USD)
         goal_impressions: Impression goal (updates primaryGoal.units)
         end_year: End date year
         end_month: End date month (1-12)
@@ -357,13 +358,13 @@ def update_line_item(
         end_year=end_year,
         end_month=end_month,
         end_day=end_day,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
 
 @mcp.tool()
-def list_line_items_by_order(order_id: int, network_code: Optional[str] = None) -> str:
+def list_line_items_by_order(order_id: int, network_code: Union[str, int, None] = None) -> str:
     """List all line items for an order.
 
     Args:
@@ -374,12 +375,12 @@ def list_line_items_by_order(order_id: int, network_code: Optional[str] = None) 
     Returns list of line items with their status and statistics.
     """
     init_client()
-    result = line_items.list_line_items_by_order(order_id=order_id, network_code=network_code)
+    result = line_items.list_line_items_by_order(order_id=order_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
 @mcp.tool()
-def pause_line_item(line_item_id: int, network_code: Optional[str] = None) -> str:
+def pause_line_item(line_item_id: int, network_code: Union[str, int, None] = None) -> str:
     """Pause a delivering line item.
 
     Pausing stops the line item from delivering ads. The line item
@@ -393,12 +394,12 @@ def pause_line_item(line_item_id: int, network_code: Optional[str] = None) -> st
     Returns the result of the pause action including new status.
     """
     init_client()
-    result = line_items.pause_line_item(line_item_id=line_item_id, network_code=network_code)
+    result = line_items.pause_line_item(line_item_id=line_item_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
 @mcp.tool()
-def resume_line_item(line_item_id: int, network_code: Optional[str] = None) -> str:
+def resume_line_item(line_item_id: int, network_code: Union[str, int, None] = None) -> str:
     """Resume a paused line item.
 
     Resuming allows a previously paused line item to start
@@ -412,12 +413,12 @@ def resume_line_item(line_item_id: int, network_code: Optional[str] = None) -> s
     Returns the result of the resume action including new status.
     """
     init_client()
-    result = line_items.resume_line_item(line_item_id=line_item_id, network_code=network_code)
+    result = line_items.resume_line_item(line_item_id=line_item_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
 @mcp.tool()
-def archive_line_item(line_item_id: int, network_code: Optional[str] = None) -> str:
+def archive_line_item(line_item_id: int, network_code: Union[str, int, None] = None) -> str:
     """Archive a line item.
 
     Archived line items are hidden from the default UI views but can
@@ -432,26 +433,28 @@ def archive_line_item(line_item_id: int, network_code: Optional[str] = None) -> 
     Returns the result of the archive action including new status.
     """
     init_client()
-    result = line_items.archive_line_item(line_item_id=line_item_id, network_code=network_code)
+    result = line_items.archive_line_item(line_item_id=line_item_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
 @mcp.tool()
-def approve_line_item(line_item_id: int, network_code: Optional[str] = None) -> str:
-    """Approve a line item that requires approval.
+def approve_order(order_id: int, network_code: Union[str, int, None] = None) -> str:
+    """Approve an order so its line items can start delivering.
 
-    This is used when the approval workflow is enabled in Google Ad Manager.
-    Line items in NEEDS_APPROVAL status can be approved to allow delivery.
+    Approval is an order level operation in Google Ad Manager - there is no
+    line item equivalent - and it affects every line item on the order.
+    Approving requires an account role that permits it; a Trafficker role
+    cannot approve orders.
 
     Args:
-        line_item_id: The line item ID to approve
+        order_id: The order ID to approve
         network_code: Optional GAM network code to target a specific network.
             If not provided, uses the default network.
 
-    Returns the result of the approve action including new status.
+    Returns the order's status after approval.
     """
     init_client()
-    result = line_items.approve_line_item(line_item_id=line_item_id, network_code=network_code)
+    result = orders.approve_order(order_id=order_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
@@ -467,7 +470,7 @@ def upload_creative(
     creative_name: Optional[str] = None,
     override_size_width: Optional[int] = None,
     override_size_height: Optional[int] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Upload an image creative to Ad Manager.
 
@@ -495,7 +498,7 @@ def upload_creative(
         creative_name=creative_name,
         override_size_width=override_size_width,
         override_size_height=override_size_height,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -506,7 +509,7 @@ def associate_creative_with_line_item(
     line_item_id: int,
     size_override_width: Optional[int] = None,
     size_override_height: Optional[int] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Associate a creative with a line item.
 
@@ -526,7 +529,7 @@ def associate_creative_with_line_item(
         line_item_id=line_item_id,
         size_override_width=size_override_width,
         size_override_height=size_override_height,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -538,7 +541,7 @@ def upload_and_associate_creative(
     line_item_id: int,
     click_through_url: str,
     creative_name: Optional[str] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Upload a creative and associate it with a line item in one step.
 
@@ -560,7 +563,7 @@ def upload_and_associate_creative(
         line_item_id=line_item_id,
         click_through_url=click_through_url,
         creative_name=creative_name,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -572,7 +575,7 @@ def bulk_upload_creatives(
     line_item_id: int,
     click_through_url: str,
     name_prefix: Optional[str] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Upload all creatives from a folder and associate with a line item.
 
@@ -595,13 +598,13 @@ def bulk_upload_creatives(
         line_item_id=line_item_id,
         click_through_url=click_through_url,
         name_prefix=name_prefix,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
 
 @mcp.tool()
-def get_creative(creative_id: int, network_code: Optional[str] = None) -> str:
+def get_creative(creative_id: int, network_code: Union[str, int, None] = None) -> str:
     """Get creative details by ID.
 
     Args:
@@ -612,7 +615,7 @@ def get_creative(creative_id: int, network_code: Optional[str] = None) -> str:
     Returns creative details including size and destination URL.
     """
     init_client()
-    result = creatives.get_creative(creative_id=creative_id, network_code=network_code)
+    result = creatives.get_creative(creative_id=creative_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
@@ -620,7 +623,7 @@ def get_creative(creative_id: int, network_code: Optional[str] = None) -> str:
 def list_creatives_by_advertiser(
     advertiser_id: int,
     limit: int = 100,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """List creatives for an advertiser.
 
@@ -636,7 +639,7 @@ def list_creatives_by_advertiser(
     result = creatives.list_creatives_by_advertiser(
         advertiser_id=advertiser_id,
         limit=limit,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -646,7 +649,7 @@ def update_creative(
     creative_id: int,
     destination_url: Optional[str] = None,
     name: Optional[str] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Update an existing creative's properties.
 
@@ -665,7 +668,7 @@ def update_creative(
         creative_id=creative_id,
         destination_url=destination_url,
         name=name,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -674,7 +677,7 @@ def update_creative(
 def list_creatives_by_line_item(
     line_item_id: int,
     limit: int = 100,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """List creatives associated with a line item.
 
@@ -690,7 +693,7 @@ def list_creatives_by_line_item(
     result = creatives.list_creatives_by_line_item(
         line_item_id=line_item_id,
         limit=limit,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -700,7 +703,7 @@ def get_creative_preview_url(
     line_item_id: int,
     creative_id: int,
     site_url: str,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Get a preview URL for a creative associated with a line item.
 
@@ -723,7 +726,7 @@ def get_creative_preview_url(
         line_item_id=line_item_id,
         creative_id=creative_id,
         site_url=site_url,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -737,7 +740,7 @@ def create_third_party_creative(
     snippet: str,
     expanded_snippet: Optional[str] = None,
     is_safe_frame_compatible: bool = True,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Create a third-party creative (HTML/JavaScript ad tag).
 
@@ -766,7 +769,7 @@ def create_third_party_creative(
         snippet=snippet,
         expanded_snippet=expanded_snippet,
         is_safe_frame_compatible=is_safe_frame_compatible,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -776,7 +779,7 @@ def create_third_party_creative(
 # =============================================================================
 
 @mcp.tool()
-def find_advertiser(name: str, network_code: Optional[str] = None) -> str:
+def find_advertiser(name: str, network_code: Union[str, int, None] = None) -> str:
     """Find an advertiser by name (partial match).
 
     Args:
@@ -787,12 +790,12 @@ def find_advertiser(name: str, network_code: Optional[str] = None) -> str:
     Returns list of matching advertisers.
     """
     init_client()
-    result = advertisers.find_advertiser(name=name, network_code=network_code)
+    result = advertisers.find_advertiser(name=name, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
 @mcp.tool()
-def get_advertiser(advertiser_id: int, network_code: Optional[str] = None) -> str:
+def get_advertiser(advertiser_id: int, network_code: Union[str, int, None] = None) -> str:
     """Get advertiser details by ID.
 
     Args:
@@ -803,12 +806,12 @@ def get_advertiser(advertiser_id: int, network_code: Optional[str] = None) -> st
     Returns advertiser details.
     """
     init_client()
-    result = advertisers.get_advertiser(advertiser_id=advertiser_id, network_code=network_code)
+    result = advertisers.get_advertiser(advertiser_id=advertiser_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
 @mcp.tool()
-def list_advertisers(limit: int = 100, network_code: Optional[str] = None) -> str:
+def list_advertisers(limit: int = 100, network_code: Union[str, int, None] = None) -> str:
     """List all advertisers.
 
     Args:
@@ -819,7 +822,7 @@ def list_advertisers(limit: int = 100, network_code: Optional[str] = None) -> st
     Returns list of advertisers.
     """
     init_client()
-    result = advertisers.list_advertisers(limit=limit, network_code=network_code)
+    result = advertisers.list_advertisers(limit=limit, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
@@ -828,7 +831,7 @@ def create_advertiser(
     name: str,
     email: Optional[str] = None,
     address: Optional[str] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Create a new advertiser.
 
@@ -846,7 +849,7 @@ def create_advertiser(
         name=name,
         email=email,
         address=address,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -855,7 +858,7 @@ def create_advertiser(
 def find_or_create_advertiser(
     name: str,
     email: Optional[str] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Find an advertiser by exact name or create if not found.
 
@@ -868,7 +871,7 @@ def find_or_create_advertiser(
     Returns the existing or newly created advertiser.
     """
     init_client()
-    result = advertisers.find_or_create_advertiser(name=name, email=email, network_code=network_code)
+    result = advertisers.find_or_create_advertiser(name=name, email=email, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
@@ -877,7 +880,7 @@ def find_or_create_advertiser(
 # =============================================================================
 
 @mcp.tool()
-def verify_line_item_setup(line_item_id: int, network_code: Optional[str] = None) -> str:
+def verify_line_item_setup(line_item_id: int, network_code: Union[str, int, None] = None) -> str:
     """Verify line item setup including creative placeholders and associations.
 
     Args:
@@ -893,12 +896,12 @@ def verify_line_item_setup(line_item_id: int, network_code: Optional[str] = None
     Returns verification results with any issues found.
     """
     init_client()
-    result = verification.verify_line_item_setup(line_item_id=line_item_id, network_code=network_code)
+    result = verification.verify_line_item_setup(line_item_id=line_item_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
 @mcp.tool()
-def check_line_item_delivery_status(line_item_id: int, network_code: Optional[str] = None) -> str:
+def check_line_item_delivery_status(line_item_id: int, network_code: Union[str, int, None] = None) -> str:
     """Check detailed delivery status for a line item.
 
     Args:
@@ -909,12 +912,12 @@ def check_line_item_delivery_status(line_item_id: int, network_code: Optional[st
     Returns delivery progress including impressions, clicks, and goal progress.
     """
     init_client()
-    result = verification.check_line_item_delivery_status(line_item_id=line_item_id, network_code=network_code)
+    result = verification.check_line_item_delivery_status(line_item_id=line_item_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
 @mcp.tool()
-def verify_order_setup(order_id: int, network_code: Optional[str] = None) -> str:
+def verify_order_setup(order_id: int, network_code: Union[str, int, None] = None) -> str:
     """Verify complete order setup including all line items.
 
     Args:
@@ -925,7 +928,7 @@ def verify_order_setup(order_id: int, network_code: Optional[str] = None) -> str
     Returns comprehensive verification of the order and all its line items.
     """
     init_client()
-    result = verification.verify_order_setup(order_id=order_id, network_code=network_code)
+    result = verification.verify_order_setup(order_id=order_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 
@@ -946,7 +949,7 @@ def run_delivery_report(
     line_item_id: Optional[int] = None,
     include_date_breakdown: bool = True,
     timeout_seconds: int = 120,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Run a delivery report for orders and line items.
 
@@ -984,7 +987,7 @@ def run_delivery_report(
         line_item_id=line_item_id,
         include_date_breakdown=include_date_breakdown,
         timeout_seconds=timeout_seconds,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -998,10 +1001,11 @@ def run_inventory_report(
     end_year: Optional[int] = None,
     end_month: Optional[int] = None,
     end_day: Optional[int] = None,
-    ad_unit_id: Optional[str] = None,
+    ad_unit_id: Union[str, int, None] = None,
     include_date_breakdown: bool = True,
+    ad_unit_view: str = "TOP_LEVEL",
     timeout_seconds: int = 120,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Run an inventory report for ad units.
 
@@ -1017,6 +1021,19 @@ def run_inventory_report(
         end_day: End date day 1-31 (for CUSTOM_DATE)
         ad_unit_id: Optional ad unit ID to filter by
         include_date_breakdown: If True, includes daily breakdown (default: True)
+        ad_unit_view: Which levels of the ad unit hierarchy the report resolves.
+            Only affects reports using the AD_UNIT_ID / AD_UNIT_NAME dimensions.
+            - TOP_LEVEL (default): only top-level ad units are returned; the metrics
+              of every descendant roll up into its top-level ancestor, so AD_UNIT_NAME
+              yields exactly one row per top-level ad unit. This is what GAM applies
+              when adUnitView is omitted.
+            - FLAT: every ad unit is returned as its own row, leaf ad units included.
+              AD_UNIT_NAME then holds the full path, e.g.
+              "Site (12345678) >> Desktop (...) >> Sport (...) >> details_ad_1 (...)".
+              Use this to report on placement-level inventory.
+            - HIERARCHICAL: the same rows as FLAT, but AD_UNIT_NAME / AD_UNIT_ID are
+              expanded into one column per hierarchy level ("Ad unit 1" ... "Ad unit N",
+              "Ad unit ID 1" ... "Ad unit ID N") instead of a single combined column.
         timeout_seconds: Maximum time to wait for report (default: 120)
         network_code: Optional GAM network code to target a specific network.
             If not provided, uses the default network.
@@ -1032,10 +1049,11 @@ def run_inventory_report(
         end_year=end_year,
         end_month=end_month,
         end_day=end_day,
-        ad_unit_id=ad_unit_id,
+        ad_unit_id=normalize_id(ad_unit_id),
         include_date_breakdown=include_date_breakdown,
+        ad_unit_view=ad_unit_view,
         timeout_seconds=timeout_seconds,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -1052,8 +1070,9 @@ def run_custom_report(
     end_month: Optional[int] = None,
     end_day: Optional[int] = None,
     filter_statement: Optional[str] = None,
+    ad_unit_view: str = "TOP_LEVEL",
     timeout_seconds: int = 120,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Run a custom report with specified dimensions and metrics.
 
@@ -1076,6 +1095,19 @@ def run_custom_report(
         end_month: End month (1-12) for CUSTOM_DATE range
         end_day: End day (1-31) for CUSTOM_DATE range
         filter_statement: Optional filter (e.g., "ORDER_ID = 12345")
+        ad_unit_view: Which levels of the ad unit hierarchy the report resolves.
+            Only affects reports using the AD_UNIT_ID / AD_UNIT_NAME dimensions.
+            - TOP_LEVEL (default): only top-level ad units are returned; the metrics
+              of every descendant roll up into its top-level ancestor, so AD_UNIT_NAME
+              yields exactly one row per top-level ad unit. This is what GAM applies
+              when adUnitView is omitted.
+            - FLAT: every ad unit is returned as its own row, leaf ad units included.
+              AD_UNIT_NAME then holds the full path, e.g.
+              "Site (12345678) >> Desktop (...) >> Sport (...) >> details_ad_1 (...)".
+              Use this to report on placement-level inventory.
+            - HIERARCHICAL: the same rows as FLAT, but AD_UNIT_NAME / AD_UNIT_ID are
+              expanded into one column per hierarchy level ("Ad unit 1" ... "Ad unit N",
+              "Ad unit ID 1" ... "Ad unit ID N") instead of a single combined column.
         timeout_seconds: Maximum seconds to wait for report completion
         network_code: Optional GAM network code to target a specific network.
             If not provided, uses the default network.
@@ -1106,8 +1138,9 @@ def run_custom_report(
         end_month=end_month,
         end_day=end_day,
         filter_statement=filter_statement,
+        ad_unit_view=ad_unit_view,
         timeout_seconds=timeout_seconds,
-        network_code=network_code
+        network_code=normalize_id(network_code)
     )
     return json.dumps(result, indent=2)
 
@@ -1126,11 +1159,11 @@ def create_campaign(
     end_day: int,
     creatives_folder: str,
     click_through_url: str,
-    target_ad_unit_id: str,
+    target_ad_unit_id: Union[str, int],
     goal_impressions: int = 100000,
     line_item_type: str = "STANDARD",
     creative_sizes: Optional[str] = None,
-    network_code: Optional[str] = None
+    network_code: Union[str, int, None] = None
 ) -> str:
     """Create a complete campaign: find/create advertiser, order, line item, and upload creatives.
 
@@ -1179,7 +1212,7 @@ def create_campaign(
 
     try:
         # Step 1: Find or create advertiser
-        adv_result = advertisers.find_or_create_advertiser(name=advertiser_name, network_code=network_code)
+        adv_result = advertisers.find_or_create_advertiser(name=advertiser_name, network_code=normalize_id(network_code))
         if "error" in adv_result:
             result["errors"].append(f"Advertiser: {adv_result['error']}")
             return json.dumps(result, indent=2)
@@ -1190,7 +1223,7 @@ def create_campaign(
         order_result = orders.find_or_create_order(
             order_name=order_name,
             advertiser_id=advertiser_id,
-            network_code=network_code
+            network_code=normalize_id(network_code)
         )
         if "error" in order_result:
             result["errors"].append(f"Order: {order_result['error']}")
@@ -1205,11 +1238,11 @@ def create_campaign(
             end_year=end_year,
             end_month=end_month,
             end_day=end_day,
-            target_ad_unit_id=target_ad_unit_id,
+            target_ad_unit_id=normalize_id(target_ad_unit_id),
             goal_impressions=goal_impressions,
             line_item_type=line_item_type,
             creative_sizes=parsed_sizes,
-            network_code=network_code
+            network_code=normalize_id(network_code)
         )
         if "error" in li_result:
             result["errors"].append(f"Line Item: {li_result['error']}")
@@ -1224,7 +1257,7 @@ def create_campaign(
             line_item_id=line_item_id,
             click_through_url=click_through_url,
             name_prefix=f"{advertiser_name} - {order_name}",
-            network_code=network_code
+            network_code=normalize_id(network_code)
         )
         result["creatives"] = creative_result
 

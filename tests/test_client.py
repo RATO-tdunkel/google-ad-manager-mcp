@@ -1,7 +1,8 @@
 """Tests for GAM client module."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from gam_mcp.client import (
     GAMClient,
@@ -79,7 +80,7 @@ class TestGAMClient:
             credentials_path="/path/to/creds.json",
             network_code="12345678",
         )
-        assert client.api_version == "v202502"
+        assert client.api_version == GAMClient.DEFAULT_API_VERSION
 
     @patch("gam_mcp.client.oauth2.GoogleServiceAccountClient")
     @patch("gam_mcp.client.ad_manager.AdManagerClient")
@@ -96,7 +97,7 @@ class TestGAMClient:
         client.get_service("OrderService")
 
         mock_client_instance.GetService.assert_called_once_with(
-            "OrderService", version="v202502"
+            "OrderService", version=GAMClient.DEFAULT_API_VERSION
         )
 
     @patch("gam_mcp.client.ad_manager.StatementBuilder")
@@ -109,7 +110,9 @@ class TestGAMClient:
 
         client.create_statement()
 
-        mock_statement_builder.assert_called_once_with(version="v202502")
+        mock_statement_builder.assert_called_once_with(
+            version=GAMClient.DEFAULT_API_VERSION
+        )
 
 
 class TestGlobalClient:
@@ -146,6 +149,7 @@ class TestGlobalClient:
             "/path/to/creds.json",
             "12345678",
             "GAM MCP Server",
+            api_version=None,
         )
         assert result == mock_client
 
@@ -176,6 +180,7 @@ class TestGlobalClient:
             "/path/to/creds.json",
             "12345678",
             "Custom App",
+            api_version=None,
         )
 
 
@@ -224,7 +229,7 @@ class TestMultiNetworkClient:
         # Verify it was created with the right network code
         assert mock_gam_client_class.call_count == 2
         mock_gam_client_class.assert_called_with(
-            "/path/to/creds.json", "22222222", "GAM MCP Server"
+            "/path/to/creds.json", "22222222", "GAM MCP Server", api_version=None
         )
 
     @patch("gam_mcp.client.GAMClient")
@@ -279,3 +284,56 @@ class TestMultiNetworkClient:
         # Should not raise - default is always allowed
         result = get_gam_client(network_code="11111111")
         assert result is not None
+
+
+class TestNetworkCodeNormalization:
+    """Network codes must resolve identically as numbers and strings."""
+
+    @pytest.fixture(autouse=True)
+    def initialized(self):
+        """Initialize the registry with two allowed networks."""
+        with patch("gam_mcp.client.GAMClient"):
+            init_gam_client(
+                credentials_path="/path/to/creds.json",
+                network_code="98765432109",
+                allowed_network_codes={"87654321098"},
+            )
+        yield
+
+    @pytest.mark.parametrize("network_code", ["87654321098", 87654321098, " 87654321098 "])
+    def test_allowed_network_resolves(self, network_code):
+        """Test an allowed network is found regardless of serialization."""
+        client = get_gam_client(network_code=network_code)
+
+        assert client is get_gam_client(network_code="87654321098")
+
+    def test_blank_network_code_falls_back_to_default(self):
+        """Test an empty string selects the default network."""
+        assert get_gam_client(network_code="") is get_gam_client()
+
+    def test_unknown_numeric_network_is_rejected(self):
+        """Test validation still rejects networks outside the allowed list."""
+        with pytest.raises(ValueError, match="is not allowed"):
+            get_gam_client(network_code=99999999)
+
+
+class TestNetworkSettings:
+    """The network's own currency and time zone back the line item defaults."""
+
+    @patch("gam_mcp.client.oauth2.GoogleServiceAccountClient")
+    @patch("gam_mcp.client.ad_manager.AdManagerClient")
+    def test_reads_and_caches_network_settings(self, mock_ad_manager, mock_oauth2):
+        """Test settings are fetched once and reused."""
+        service = MagicMock()
+        service.getCurrentNetwork.return_value = {
+            "currencyCode": "CHF", "timeZone": "Europe/Zurich",
+        }
+        mock_ad_manager.return_value.GetService.return_value = service
+
+        client = GAMClient(credentials_path="/creds.json", network_code="123")
+
+        assert client.get_network_settings() == {
+            "currency_code": "CHF", "time_zone": "Europe/Zurich",
+        }
+        assert client.get_network_settings()["currency_code"] == "CHF"
+        service.getCurrentNetwork.assert_called_once()

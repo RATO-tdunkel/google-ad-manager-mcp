@@ -2,7 +2,10 @@
 
 import logging
 from typing import Optional
+
 from googleads import ad_manager, oauth2
+
+from .utils import IdParam, normalize_id, safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +13,7 @@ logger = logging.getLogger(__name__)
 class GAMClient:
     """Google Ad Manager API client wrapper."""
 
-    DEFAULT_API_VERSION = "v202602"
+    DEFAULT_API_VERSION = "v202608"
 
     def __init__(
         self,
@@ -25,13 +28,14 @@ class GAMClient:
             credentials_path: Path to service account JSON credentials file
             network_code: Ad Manager network code
             application_name: Application name for API requests
-            api_version: GAM API version override (e.g. "v202602"). Defaults to DEFAULT_API_VERSION.
+            api_version: GAM API version override (e.g. "v202608"). Defaults to DEFAULT_API_VERSION.
         """
         self.credentials_path = credentials_path
         self.network_code = network_code
         self.application_name = application_name
         self._client: Optional[ad_manager.AdManagerClient] = None
         self._api_version = api_version or self.DEFAULT_API_VERSION
+        self._network_settings: Optional[dict] = None
 
     def _get_client(self) -> ad_manager.AdManagerClient:
         """Get or create the Ad Manager client."""
@@ -80,6 +84,24 @@ class GAMClient:
         """
         return ad_manager.StatementBuilder(version=self._api_version)
 
+    def get_network_settings(self) -> dict:
+        """Get the network's own currency and time zone.
+
+        Used as the default for line item currency and end dates, so the values
+        follow the network instead of a hardcoded locale. Fetched once per
+        client and cached.
+
+        Returns:
+            dict with 'currency_code' and 'time_zone'
+        """
+        if self._network_settings is None:
+            network = self.get_service('NetworkService').getCurrentNetwork()
+            self._network_settings = {
+                'currency_code': safe_get(network, 'currencyCode'),
+                'time_zone': safe_get(network, 'timeZone'),
+            }
+        return self._network_settings
+
     def get_data_downloader(self):
         """Get the data downloader for reports.
 
@@ -107,11 +129,12 @@ def is_gam_client_initialized() -> bool:
     return _default_network_code is not None
 
 
-def get_gam_client(network_code: Optional[str] = None) -> GAMClient:
+def get_gam_client(network_code: IdParam = None) -> GAMClient:
     """Get a GAM client instance for the given network code.
 
     Args:
-        network_code: Optional network code. If not provided, uses the default network.
+        network_code: Optional network code, as a string or a number. If not
+            provided, uses the default network.
 
     Returns:
         The GAM client instance for the requested network
@@ -125,7 +148,7 @@ def get_gam_client(network_code: Optional[str] = None) -> GAMClient:
             "GAM client not initialized. Call init_gam_client() first."
         )
 
-    target_code = network_code or _default_network_code
+    target_code = normalize_id(network_code) or _default_network_code
 
     if target_code not in _allowed_network_codes:
         raise ValueError(
@@ -157,7 +180,7 @@ def init_gam_client(
         network_code: Default Ad Manager network code
         application_name: Application name for API requests
         allowed_network_codes: Optional set of additional allowed network codes
-        api_version: GAM API version override (e.g. "v202602"). If None, uses GAMClient default.
+        api_version: GAM API version override (e.g. "v202608"). If None, uses GAMClient default.
 
     Returns:
         The initialized default GAM client

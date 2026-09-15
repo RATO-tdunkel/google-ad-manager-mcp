@@ -1,12 +1,20 @@
 """Line item tools for Google Ad Manager."""
 
 import logging
-from typing import Optional, List
+from typing import List, Optional
+
 from ..client import get_gam_client
-from ..utils import safe_get, extract_date
+from ..utils import extract_date, safe_get
 
 logger = logging.getLogger(__name__)
 
+
+# LineItemAction subtypes offered by LineItemService. There is deliberately no
+# "ApproveLineItems": approval is an order level operation in GAM.
+LINE_ITEM_ACTIONS = (
+    "ActivateLineItems", "ArchiveLineItems", "DeleteLineItems", "PauseLineItems",
+    "ReleaseLineItems", "ReserveLineItems", "ResumeLineItems", "UnarchiveLineItems",
+)
 
 # Standard creative sizes
 DEFAULT_CREATIVE_PLACEHOLDERS = [
@@ -100,7 +108,7 @@ def create_line_item(
     goal_impressions: int = 100000,
     creative_sizes: Optional[List[dict]] = None,
     cost_per_unit_micro: int = 0,
-    currency_code: str = "MAD",
+    currency_code: Optional[str] = None,
     network_code: Optional[str] = None
 ) -> dict:
     """Create a new line item.
@@ -116,7 +124,7 @@ def create_line_item(
         goal_impressions: Impression goal
         creative_sizes: List of size dicts (optional, uses defaults if not provided)
         cost_per_unit_micro: Cost in micro amounts
-        currency_code: Currency code
+        currency_code: Currency code. Defaults to the network's own currency.
         network_code: Optional GAM network code. Uses default if not provided.
 
     Returns:
@@ -124,6 +132,11 @@ def create_line_item(
     """
     client = get_gam_client(network_code=network_code)
     line_item_service = client.get_service('LineItemService')
+
+    # Fall back to the network's own currency and time zone
+    network_settings = client.get_network_settings()
+    currency_code = currency_code or network_settings['currency_code']
+    time_zone_id = network_settings['time_zone']
 
     # Use default sizes if not provided
     if creative_sizes is None:
@@ -144,7 +157,7 @@ def create_line_item(
             'hour': 23,
             'minute': 59,
             'second': 59,
-            'timeZoneId': 'Africa/Casablanca'
+            'timeZoneId': time_zone_id
         },
         'costType': 'CPM',
         'costPerUnit': {
@@ -301,7 +314,7 @@ def update_line_item(
                            AS_FAST_AS_POSSIBLE)
         priority: Priority value (1-16, depends on line item type)
         cost_per_unit_micro: Cost per unit in micro amounts (e.g., 1000000 = 1 currency unit)
-        currency_code: Currency code (e.g., MAD, USD, EUR)
+        currency_code: Currency code (e.g., CHF, EUR, USD)
         goal_impressions: Impression goal (updates primaryGoal.units)
         end_year: End date year
         end_month: End date month (1-12)
@@ -313,6 +326,7 @@ def update_line_item(
     """
     client = get_gam_client(network_code=network_code)
     line_item_service = client.get_service('LineItemService')
+    time_zone_id = client.get_network_settings()['time_zone']
 
     # Fetch the existing line item
     statement = client.create_statement()
@@ -355,12 +369,12 @@ def update_line_item(
             line_item['costPerUnit'] = {}
 
         if cost_per_unit_micro is not None:
-            old_cost = safe_get(line_item.get('costPerUnit', {}), 'microAmount', 0)
+            old_cost = safe_get(safe_get(line_item, 'costPerUnit', {}), 'microAmount', 0)
             line_item['costPerUnit']['microAmount'] = cost_per_unit_micro
             changes.append(f"costPerUnit.microAmount: {old_cost} -> {cost_per_unit_micro}")
 
         if currency_code is not None:
-            old_currency = safe_get(line_item.get('costPerUnit', {}), 'currencyCode')
+            old_currency = safe_get(safe_get(line_item, 'costPerUnit', {}), 'currencyCode')
             line_item['costPerUnit']['currencyCode'] = currency_code
             changes.append(f"costPerUnit.currencyCode: '{old_currency}' -> '{currency_code}'")
 
@@ -371,7 +385,7 @@ def update_line_item(
                 'goalType': 'LIFETIME',
                 'unitType': 'IMPRESSIONS'
             }
-        old_goal = safe_get(line_item.get('primaryGoal', {}), 'units', 0)
+        old_goal = safe_get(safe_get(line_item, 'primaryGoal', {}), 'units', 0)
         line_item['primaryGoal']['units'] = goal_impressions
         changes.append(f"primaryGoal.units: {old_goal} -> {goal_impressions}")
 
@@ -383,7 +397,7 @@ def update_line_item(
             'hour': 23,
             'minute': 59,
             'second': 59,
-            'timeZoneId': 'Africa/Casablanca'
+            'timeZoneId': time_zone_id
         }
         new_end = f"{end_year}-{end_month:02d}-{end_day:02d}"
         changes.append(f"endDateTime: '{old_end}' -> '{new_end}'")
@@ -411,9 +425,9 @@ def update_line_item(
         "delivery_rate_type": safe_get(updated_li, 'deliveryRateType'),
         "priority": safe_get(updated_li, 'priority'),
         "cost_type": safe_get(updated_li, 'costType'),
-        "cost_per_unit_micro": safe_get(updated_li.get('costPerUnit', {}), 'microAmount'),
-        "currency_code": safe_get(updated_li.get('costPerUnit', {}), 'currencyCode'),
-        "goal_impressions": safe_get(updated_li.get('primaryGoal', {}), 'units'),
+        "cost_per_unit_micro": safe_get(safe_get(updated_li, 'costPerUnit', {}), 'microAmount'),
+        "currency_code": safe_get(safe_get(updated_li, 'costPerUnit', {}), 'currencyCode'),
+        "goal_impressions": safe_get(safe_get(updated_li, 'primaryGoal', {}), 'units'),
         "end_date": end_date,
         "changes": changes,
         "message": f"Line item {line_item_id} updated successfully"
@@ -471,13 +485,18 @@ def _perform_line_item_action(
 
     Args:
         line_item_id: The line item ID
-        action_type: Action to perform (PauseLineItems, ResumeLineItems,
-                     ArchiveLineItems, ApproveLineItems)
+        action_type: Action to perform, one of LINE_ITEM_ACTIONS
         network_code: Optional GAM network code. Uses default if not provided.
 
     Returns:
-        dict with action result
+        dict with action result, or an error dict if GAM refuses the action
     """
+    if action_type not in LINE_ITEM_ACTIONS:
+        return {
+            "error": f"Unknown line item action '{action_type}'. "
+                     f"Valid actions: {', '.join(LINE_ITEM_ACTIONS)}"
+        }
+
     client = get_gam_client(network_code=network_code)
     line_item_service = client.get_service('LineItemService')
 
@@ -488,11 +507,24 @@ def _perform_line_item_action(
     # Create the action object
     action = {'xsi_type': action_type}
 
-    # Perform the action
-    result = line_item_service.performLineItemAction(
-        action,
-        statement.ToStatement()
-    )
+    # Perform the action. GAM refuses actions that do not apply to the line
+    # item's current state (a DRAFT line item cannot be paused, a line item
+    # without creatives cannot be resumed); surface that as an error rather
+    # than letting the SOAP fault escape to the caller.
+    try:
+        result = line_item_service.performLineItemAction(
+            action,
+            statement.ToStatement()
+        )
+    except Exception as e:
+        logger.error(f"Line item action '{action_type}' failed: {e}")
+        return {
+            "success": False,
+            "id": line_item_id,
+            "action": action_type,
+            "error": f"GAM rejected action '{action_type}' on line item "
+                     f"{line_item_id}: {e}"
+        }
 
     if result and safe_get(result, 'numChanges', 0) > 0:
         # Fetch updated line item to return current status
@@ -557,19 +589,3 @@ def archive_line_item(line_item_id: int, network_code: Optional[str] = None) -> 
         dict with result of the archive action
     """
     return _perform_line_item_action(line_item_id, 'ArchiveLineItems', network_code=network_code)
-
-
-def approve_line_item(line_item_id: int, network_code: Optional[str] = None) -> dict:
-    """Approve a line item that requires approval.
-
-    This is used when the approval workflow is enabled in GAM.
-    Line items in NEEDS_APPROVAL status can be approved to start delivery.
-
-    Args:
-        line_item_id: The line item ID to approve
-        network_code: Optional GAM network code. Uses default if not provided.
-
-    Returns:
-        dict with result of the approve action
-    """
-    return _perform_line_item_action(line_item_id, 'ApproveLineItems', network_code=network_code)

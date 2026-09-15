@@ -1,6 +1,11 @@
 """Utility functions for GAM MCP Server."""
 
-from typing import Any, Optional
+from typing import Any, Optional, Union
+
+# Type for identifier parameters that may arrive as a JSON number or a JSON string.
+# Purely numeric IDs (network codes, ad unit IDs) are routinely serialized as
+# numbers by MCP clients, so the tool signatures accept both and normalize here.
+IdParam = Union[str, int, None]
 
 
 def safe_get(obj: Any, key: str, default: Any = None) -> Any:
@@ -113,3 +118,36 @@ def zeep_to_dict(obj: Any) -> Any:
         pass
 
     return str(obj)
+
+
+def normalize_id(value: IdParam) -> Optional[str]:
+    """Normalize an identifier parameter to a string.
+
+    GAM identifiers (network codes, ad unit IDs) are numeric strings. MCP clients
+    frequently serialize them as JSON numbers, which would otherwise fail string
+    validation. Accept both and return the canonical string form.
+
+    Args:
+        value: The identifier as a string, an integer, or None
+
+    Returns:
+        The identifier as a stripped string, or None if not provided (None or blank)
+
+    Raises:
+        TypeError: If the value is a bool or any other non-identifier type
+    """
+    if value is None:
+        return None
+
+    # bool is a subclass of int, but True/False is never a valid identifier
+    if isinstance(value, bool):
+        raise TypeError(f"Invalid identifier: {value!r}")
+
+    if isinstance(value, int):
+        return str(value)
+
+    if not isinstance(value, str):
+        raise TypeError(f"Invalid identifier: {value!r}")
+
+    stripped = value.strip()
+    return stripped or None

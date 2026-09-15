@@ -1,10 +1,11 @@
 """Verification tools for Google Ad Manager."""
 
 import logging
-from datetime import datetime, date
+from datetime import date, datetime
 from typing import Optional
+
 from ..client import get_gam_client
-from ..utils import safe_get, extract_date
+from ..utils import extract_date, safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -45,18 +46,20 @@ def verify_line_item_setup(line_item_id: int, network_code: Optional[str] = None
         "id": line_item['id'],
         "name": line_item['name'],
         "status": line_item['status'],
-        "type": line_item.get('lineItemType'),
+        "type": safe_get(line_item, 'lineItemType'),
         "order_id": line_item['orderId']
     }
 
     # Extract creative placeholders
-    if line_item.get('creativePlaceholders'):
+    if safe_get(line_item, 'creativePlaceholders'):
         for ph in line_item['creativePlaceholders']:
-            size = ph.get('size', {})
+            size = safe_get(ph, 'size', {})
+            width = safe_get(size, 'width')
+            height = safe_get(size, 'height')
             result["creative_placeholders"].append({
-                "width": size.get('width'),
-                "height": size.get('height'),
-                "size_string": f"{size.get('width')}x{size.get('height')}"
+                "width": width,
+                "height": height,
+                "size_string": f"{width}x{height}"
             })
 
     # Get creative associations using bind variable
@@ -72,7 +75,7 @@ def verify_line_item_setup(line_item_id: int, network_code: Optional[str] = None
     if 'results' in lica_response:
         for lica in lica_response['results']:
             creative_id = lica['creativeId']
-            status = lica.get('status', 'UNKNOWN')
+            status = safe_get(lica, 'status', 'UNKNOWN')
 
             # Get creative details using bind variable
             creative_statement = client.create_statement()
@@ -91,15 +94,17 @@ def verify_line_item_setup(line_item_id: int, network_code: Optional[str] = None
 
             if 'results' in creative_response and len(creative_response['results']) > 0:
                 creative = creative_response['results'][0]
-                creative_size = creative.get('size', {})
-                creative_info["creative_name"] = creative.get('name')
-                creative_info["creative_size"] = f"{creative_size.get('width')}x{creative_size.get('height')}"
+                creative_size = safe_get(creative, 'size', {})
+                creative_info["creative_name"] = safe_get(creative, 'name')
+                creative_info["creative_size"] = (
+                    f"{safe_get(creative_size, 'width')}x{safe_get(creative_size, 'height')}"
+                )
 
             # Check for size overrides in LICA
-            if lica.get('sizes'):
+            if safe_get(lica, 'sizes'):
                 for size in lica['sizes']:
                     creative_info["size_overrides"].append(
-                        f"{size.get('width')}x{size.get('height')}"
+                        f"{safe_get(size, 'width')}x{safe_get(size, 'height')}"
                     )
 
             result["creative_associations"].append(creative_info)
@@ -265,7 +270,7 @@ def verify_order_setup(order_id: int, network_code: Optional[str] = None) -> dic
         "order_id": order['id'],
         "order_name": order['name'],
         "order_status": order['status'],
-        "advertiser_id": order.get('advertiserId'),
+        "advertiser_id": safe_get(order, 'advertiserId'),
         "line_items": [],
         "issues": [],
         "overall_status": "OK"

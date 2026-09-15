@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`ad_unit_view` parameter** for `run_custom_report` and `run_inventory_report`
+  (`TOP_LEVEL`, `FLAT`, `HIERARCHICAL`), passed through as `reportQuery.adUnitView`.
+  Without it GAM applies its `TOP_LEVEL` default and an `AD_UNIT_NAME` report
+  collapses the whole hierarchy into one row per top-level ad unit, making leaf
+  ad units unreachable. The default stays `TOP_LEVEL`, so existing behaviour is
+  unchanged.
+- Continuous integration: ruff and pytest on Python 3.10, 3.11 and 3.12.
+- `scripts/verify_live.py`: smoke-tests the read and write paths against a live
+  GAM **test** network. The unit tests mock the SOAP layer, so they cannot catch
+  API drift after a version bump, nor zeep objects being treated as dicts - all
+  four bugs fixed in this release were found this way. The script refuses to run
+  against a network GAM does not report as a test network, and archives what it
+  creates. It reuses its own creative across runs: GAM has no delete action for
+  creatives, and `DeactivateCreatives` needs the
+  `ACTIVATE_AND_DEACTIVATE_CREATIVES` network feature, which is not enabled
+  everywhere - so at most one creative is ever left behind, however often the
+  script runs. Creative associations are deleted, which the API does allow.
+- `approve_order` - approve an order so its line items can start delivering.
+
+### Changed
+
+- Upgrade Google Ad Manager API version from `v202602` to `v202608`, and the
+  `googleads` dependency from 48.x to 51.x (48.x predates `v202602` and only
+  knows API versions up to `v202511`).
+- `create_line_item` no longer defaults to `MAD` and `Africa/Casablanca`. The
+  currency and the end date's time zone now follow the network's own settings,
+  read once per client from `NetworkService`. Pass `currency_code` explicitly to
+  override.
+- Identifier parameters (`network_code`, `ad_unit_id`, `target_ad_unit_id`) now
+  accept both a string and a number and are normalized internally. MCP clients
+  that drop the `anyOf` null branch from the published schema were serializing
+  purely numeric IDs as JSON numbers, which failed string validation and made
+  `network_code` unusable in practice.
+
+### Fixed
+
+- **`update_line_item` applied changes but reported failure.** It treated the
+  zeep `LineItem` as a dict (`line_item.get(...)` nested inside `safe_get`),
+  which raised while building the response - *after* `updateLineItems` had
+  already succeeded on the server. Every call failed this way, regardless of
+  which fields were passed.
+- **`verify_line_item_setup` and `verify_order_setup` crashed** on the same
+  zeep-as-dict pattern. `check_line_item_delivery_status` was unaffected.
+- **`approve_line_item` called an API action that does not exist.**
+  LineItemService has no `ApproveLineItems`; approval is an order level
+  operation. The tool was replaced by `approve_order`, which uses
+  `OrderService.ApproveOrders`. Note that approving requires a role permitting
+  it - a Trafficker role cannot.
+- Line item actions no longer let SOAP faults escape to the caller. GAM's
+  refusals (`NOT_APPLICABLE` for a DRAFT line item, `HAS_NO_ACTIVE_CREATIVES`
+  when resuming without creatives) come back as `{"error": ...}` like every
+  other tool, and unknown action names are rejected before the call.
+- Eight unit tests that had been failing since the `v202602` upgrade: they still
+  asserted `v202502` and a client signature without the `api_version` keyword.
+  Version assertions now reference `GAMClient.DEFAULT_API_VERSION`.
+
 ## [0.1.13] - 2026-03-10
 
 ### Added

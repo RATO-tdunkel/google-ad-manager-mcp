@@ -82,7 +82,7 @@ You can manage multiple GAM networks with a single server instance. List all net
 export GAM_NETWORK_CODES="31083078,22706375620,98765432"
 ```
 
-All tools accept an optional `network_code` parameter. When omitted, the first (default) network is used. The same service account credentials are shared across all networks — just ensure the service account email has been added as a user in each network.
+All tools accept an optional `network_code` parameter, as a string or a number. When omitted, the first (default) network is used. The same service account credentials are shared across all networks — just ensure the service account email has been added as a user in each network.
 
 For Claude Code MCP configuration:
 
@@ -417,6 +417,12 @@ npx @modelcontextprotocol/inspector http://localhost:8000/mcp
 | `run_inventory_report` | Generate inventory report (ad requests, fill rate) |
 | `run_custom_report` | Generate custom report with specified dimensions and metrics |
 
+`run_inventory_report` and `run_custom_report` accept an `ad_unit_view` parameter
+(`TOP_LEVEL`, `FLAT`, `HIERARCHICAL`) that controls which levels of the ad unit
+hierarchy a report resolves. The default `TOP_LEVEL` rolls every descendant up into
+its top-level ancestor, so `AD_UNIT_NAME` returns one row per top-level ad unit; use
+`FLAT` or `HIERARCHICAL` to report on leaf ad units.
+
 ### Workflow Tools
 
 | Tool | Description |
@@ -521,9 +527,26 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
 
+## Live verification
+
+The test suite mocks the SOAP layer end to end, so it needs no credentials but
+also cannot catch Google Ad Manager API drift. `scripts/verify_live.py`
+exercises the read and write paths against a real GAM **test** network:
+
+```bash
+GAM_CREDENTIALS_PATH=/path/to/sa.json \
+GAM_TEST_NETWORK_CODE=12345678 \
+python scripts/verify_live.py
+```
+
+It refuses to run unless GAM reports the network as a test network, prefixes
+everything it creates with `MCP-VERIFY`, and archives it again afterwards. Worth
+running after every API version bump.
+
 ## API Version
 
-Uses Google Ad Manager SOAP API version `v202502`.
+Uses Google Ad Manager SOAP API version `v202608`. Override it with the
+`GAM_API_VERSION` environment variable.
 
 ## License
 

@@ -4,7 +4,8 @@ import base64
 import logging
 import re
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
+
 from ..client import get_gam_client
 from ..utils import safe_get
 
@@ -181,7 +182,7 @@ def upload_creative_from_base64(
         "name": created['name'],
         "advertiser_id": advertiser_id,
         "size": f"{width}x{height}",
-        "message": f"Creative uploaded successfully"
+        "message": "Creative uploaded successfully"
     }
 
 

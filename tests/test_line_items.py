@@ -1,7 +1,6 @@
 """Tests for line item tools."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from gam_mcp.tools import line_items
 
@@ -326,3 +325,108 @@ class TestListLineItemsByOrder:
         assert result["line_items"][0]["name"] == "LI1"
         assert result["line_items"][0]["impressions_delivered"] == 100
         assert result["line_items"][1]["name"] == "LI2"
+
+
+class TestUpdateLineItemWithZeepObjects:
+    """Regression tests: update_line_item must not treat zeep objects as dicts.
+
+    The GAM API returns zeep objects, which have no ``.get()`` method. Earlier
+    versions crashed while building the response - after the update had already
+    been applied on the server, so callers were told an applied change failed.
+    """
+
+    @staticmethod
+    def _service(mock_get_client, line_item):
+        client = MagicMock()
+        mock_get_client.return_value = client
+        service = MagicMock()
+        service.getLineItemsByStatement.return_value = {"results": [line_item]}
+        service.updateLineItems.return_value = [line_item]
+        client.get_service.return_value = service
+        client.create_statement.return_value = MagicMock()
+        return service
+
+    @patch("gam_mcp.tools.line_items.get_gam_client")
+    def test_rename_only(self, mock_get_client, mock_zeep_object):
+        """Test a plain rename returns a result instead of raising."""
+        li = mock_zeep_object({"id": 123, "name": "Old", "orderId": 9, "status": "READY"})
+        service = self._service(mock_get_client, li)
+
+        result = line_items.update_line_item(line_item_id=123, name="New")
+
+        assert "error" not in result
+        assert result["name"] == "New"
+        assert result["changes"] == ["name: 'Old' -> 'New'"]
+        service.updateLineItems.assert_called_once()
+
+    @patch("gam_mcp.tools.line_items.get_gam_client")
+    def test_goal_impressions_on_existing_goal(self, mock_get_client, mock_zeep_object):
+        """Test reading the old goal off a nested zeep object."""
+        li = mock_zeep_object({
+            "id": 123, "name": "LI",
+            "primaryGoal": mock_zeep_object({"goalType": "LIFETIME", "units": 1000}),
+        })
+        self._service(mock_get_client, li)
+
+        result = line_items.update_line_item(line_item_id=123, goal_impressions=2500)
+
+        assert "error" not in result
+        assert "primaryGoal.units: 1000 -> 2500" in result["changes"]
+        assert result["goal_impressions"] == 2500
+
+    @patch("gam_mcp.tools.line_items.get_gam_client")
+    def test_cost_and_currency_on_existing_cost(self, mock_get_client, mock_zeep_object):
+        """Test reading the old cost off a nested zeep object."""
+        li = mock_zeep_object({
+            "id": 123, "name": "LI",
+            "costPerUnit": mock_zeep_object({"microAmount": 500000, "currencyCode": "EUR"}),
+        })
+        self._service(mock_get_client, li)
+
+        result = line_items.update_line_item(
+            line_item_id=123, cost_per_unit_micro=900000, currency_code="CHF"
+        )
+
+        assert "error" not in result
+        assert "costPerUnit.microAmount: 500000 -> 900000" in result["changes"]
+        assert "costPerUnit.currencyCode: 'EUR' -> 'CHF'" in result["changes"]
+
+    @patch("gam_mcp.tools.line_items.get_gam_client")
+    def test_goal_when_absent(self, mock_get_client, mock_zeep_object):
+        """Test a line item without a primaryGoal gets one created."""
+        li = mock_zeep_object({"id": 123, "name": "LI"})
+        self._service(mock_get_client, li)
+
+        result = line_items.update_line_item(line_item_id=123, goal_impressions=500)
+
+        assert "error" not in result
+        assert result["goal_impressions"] == 500
+
+
+class TestLineItemActionErrors:
+    """Actions must report GAM refusals as errors, not raise."""
+
+    @patch("gam_mcp.tools.line_items.get_gam_client")
+    def test_gam_fault_becomes_error_dict(self, mock_get_client):
+        """Test a server fault is returned as an error instead of propagating."""
+        client = MagicMock()
+        mock_get_client.return_value = client
+        service = MagicMock()
+        service.performLineItemAction.side_effect = Exception(
+            "[LineItemOperationError.NOT_APPLICABLE @ id; trigger:'7']"
+        )
+        client.get_service.return_value = service
+        client.create_statement.return_value = MagicMock()
+
+        result = line_items.pause_line_item(line_item_id=7)
+
+        assert "error" in result
+        assert "NOT_APPLICABLE" in result["error"]
+
+    def test_approve_line_item_is_gone(self):
+        """Test the tool backed by a non-existent API action was removed.
+
+        LineItemService has no ApproveLineItems action; approval is an order
+        level operation in GAM. See orders.approve_order.
+        """
+        assert not hasattr(line_items, "approve_line_item")

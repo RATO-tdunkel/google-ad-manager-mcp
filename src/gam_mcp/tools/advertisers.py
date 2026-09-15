@@ -2,6 +2,7 @@
 
 import logging
 from typing import Optional
+
 from ..client import get_gam_client
 from ..utils import safe_get
 
