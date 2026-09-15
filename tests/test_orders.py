@@ -1,7 +1,6 @@
 """Tests for order tools."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from gam_mcp.tools import orders
 

@@ -1,10 +1,11 @@
 """Order-related tools for Google Ad Manager."""
 
 import logging
-from datetime import datetime, date
+from datetime import date, datetime
 from typing import Optional
+
 from ..client import get_gam_client
-from ..utils import safe_get, extract_date
+from ..utils import extract_date, safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +175,7 @@ def get_order(
     response = order_service.getOrdersByStatement(statement.ToStatement())
 
     if 'results' not in response or len(response['results']) == 0:
-        return {"error": f"Order not found"}
+        return {"error": "Order not found"}
 
     order = response['results'][0]
 

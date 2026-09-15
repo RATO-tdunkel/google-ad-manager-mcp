@@ -1,7 +1,8 @@
 """Pytest configuration and fixtures for GAM MCP Server tests."""
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 @pytest.fixture

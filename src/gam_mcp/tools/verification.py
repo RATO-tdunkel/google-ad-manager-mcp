@@ -1,10 +1,11 @@
 """Verification tools for Google Ad Manager."""
 
 import logging
-from datetime import datetime, date
+from datetime import date, datetime
 from typing import Optional
+
 from ..client import get_gam_client
-from ..utils import safe_get, extract_date
+from ..utils import extract_date, safe_get
 
 logger = logging.getLogger(__name__)
 

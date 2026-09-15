@@ -1,7 +1,6 @@
 """Tests for line item tools."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from gam_mcp.tools import line_items
 

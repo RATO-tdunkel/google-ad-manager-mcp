@@ -1,9 +1,10 @@
 """Line item tools for Google Ad Manager."""
 
 import logging
-from typing import Optional, List
+from typing import List, Optional
+
 from ..client import get_gam_client
-from ..utils import safe_get, extract_date
+from ..utils import extract_date, safe_get
 
 logger = logging.getLogger(__name__)
 
