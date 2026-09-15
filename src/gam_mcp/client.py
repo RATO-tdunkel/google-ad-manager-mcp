@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class GAMClient:
     """Google Ad Manager API client wrapper."""
 
-    DEFAULT_API_VERSION = "v202602"
+    DEFAULT_API_VERSION = "v202608"
 
     def __init__(
         self,
@@ -28,7 +28,7 @@ class GAMClient:
             credentials_path: Path to service account JSON credentials file
             network_code: Ad Manager network code
             application_name: Application name for API requests
-            api_version: GAM API version override (e.g. "v202602"). Defaults to DEFAULT_API_VERSION.
+            api_version: GAM API version override (e.g. "v202608"). Defaults to DEFAULT_API_VERSION.
         """
         self.credentials_path = credentials_path
         self.network_code = network_code
@@ -161,7 +161,7 @@ def init_gam_client(
         network_code: Default Ad Manager network code
         application_name: Application name for API requests
         allowed_network_codes: Optional set of additional allowed network codes
-        api_version: GAM API version override (e.g. "v202602"). If None, uses GAMClient default.
+        api_version: GAM API version override (e.g. "v202608"). If None, uses GAMClient default.
 
     Returns:
         The initialized default GAM client

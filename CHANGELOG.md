@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`ad_unit_view` parameter** for `run_custom_report` and `run_inventory_report`
+  (`TOP_LEVEL`, `FLAT`, `HIERARCHICAL`), passed through as `reportQuery.adUnitView`.
+  Without it GAM applies its `TOP_LEVEL` default and an `AD_UNIT_NAME` report
+  collapses the whole hierarchy into one row per top-level ad unit, making leaf
+  ad units unreachable. The default stays `TOP_LEVEL`, so existing behaviour is
+  unchanged.
+- Continuous integration: ruff and pytest on Python 3.10, 3.11 and 3.12.
+
+### Changed
+
+- Upgrade Google Ad Manager API version from `v202602` to `v202608`, and the
+  `googleads` dependency from 48.x to 51.x (48.x predates `v202602` and only
+  knows API versions up to `v202511`).
+- Identifier parameters (`network_code`, `ad_unit_id`, `target_ad_unit_id`) now
+  accept both a string and a number and are normalized internally. MCP clients
+  that drop the `anyOf` null branch from the published schema were serializing
+  purely numeric IDs as JSON numbers, which failed string validation and made
+  `network_code` unusable in practice.
+
+### Fixed
+
+- Eight unit tests that had been failing since the `v202602` upgrade: they still
+  asserted `v202502` and a client signature without the `api_version` keyword.
+  Version assertions now reference `GAMClient.DEFAULT_API_VERSION`.
+
 ## [0.1.13] - 2026-03-10
 
 ### Added

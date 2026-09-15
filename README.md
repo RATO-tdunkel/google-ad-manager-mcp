@@ -529,7 +529,8 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## API Version
 
-Uses Google Ad Manager SOAP API version `v202502`.
+Uses Google Ad Manager SOAP API version `v202608`. Override it with the
+`GAM_API_VERSION` environment variable.
 
 ## License
 
