@@ -1,7 +1,8 @@
 """Tests for GAM client module."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from gam_mcp.client import (
     GAMClient,
@@ -283,3 +284,34 @@ class TestMultiNetworkClient:
         # Should not raise - default is always allowed
         result = get_gam_client(network_code="11111111")
         assert result is not None
+
+
+class TestNetworkCodeNormalization:
+    """Network codes must resolve identically as numbers and strings."""
+
+    @pytest.fixture(autouse=True)
+    def initialized(self):
+        """Initialize the registry with two allowed networks."""
+        with patch("gam_mcp.client.GAMClient"):
+            init_gam_client(
+                credentials_path="/path/to/creds.json",
+                network_code="98765432109",
+                allowed_network_codes={"87654321098"},
+            )
+        yield
+
+    @pytest.mark.parametrize("network_code", ["87654321098", 87654321098, " 87654321098 "])
+    def test_allowed_network_resolves(self, network_code):
+        """Test an allowed network is found regardless of serialization."""
+        client = get_gam_client(network_code=network_code)
+
+        assert client is get_gam_client(network_code="87654321098")
+
+    def test_blank_network_code_falls_back_to_default(self):
+        """Test an empty string selects the default network."""
+        assert get_gam_client(network_code="") is get_gam_client()
+
+    def test_unknown_numeric_network_is_rejected(self):
+        """Test validation still rejects networks outside the allowed list."""
+        with pytest.raises(ValueError, match="is not allowed"):
+            get_gam_client(network_code=99999999)

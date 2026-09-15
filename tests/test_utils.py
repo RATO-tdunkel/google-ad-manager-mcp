@@ -1,6 +1,8 @@
 """Tests for utility functions."""
 
-from gam_mcp.utils import safe_get, extract_date, zeep_to_dict
+import pytest
+
+from gam_mcp.utils import extract_date, normalize_id, safe_get, zeep_to_dict
 
 
 class TestSafeGet:
@@ -167,3 +169,44 @@ class TestZeepToDict:
             "name": "Banner",
             "creativePlaceholders": [{"size": {"width": 300, "height": 250}}],
         }
+
+
+class TestNormalizeId:
+    """Tests for normalize_id function."""
+
+    def test_returns_none_for_none(self):
+        """Test None passes through unchanged."""
+        assert normalize_id(None) is None
+
+    def test_returns_string_unchanged(self):
+        """Test a string identifier is returned as-is."""
+        assert normalize_id("98765432109") == "98765432109"
+
+    def test_converts_int_to_string(self):
+        """Test a numeric identifier sent as JSON number becomes a string."""
+        assert normalize_id(98765432109) == "98765432109"
+
+    def test_int_and_string_are_equivalent(self):
+        """Test both serializations normalize to the same value."""
+        assert normalize_id(98765432109) == normalize_id("98765432109")
+
+    def test_strips_surrounding_whitespace(self):
+        """Test padded strings do not become unknown network codes."""
+        assert normalize_id(" 98765432109 ") == "98765432109"
+
+    def test_blank_string_becomes_none(self):
+        """Test an empty value is treated as 'not provided'."""
+        assert normalize_id("") is None
+        assert normalize_id("   ") is None
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_rejects_bool(self, value):
+        """Test booleans are rejected even though bool subclasses int."""
+        with pytest.raises(TypeError):
+            normalize_id(value)
+
+    @pytest.mark.parametrize("value", [1.5, [], {}, object()])
+    def test_rejects_other_types(self, value):
+        """Test non-identifier types are rejected."""
+        with pytest.raises(TypeError):
+            normalize_id(value)

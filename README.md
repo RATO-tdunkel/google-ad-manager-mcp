@@ -82,7 +82,7 @@ You can manage multiple GAM networks with a single server instance. List all net
 export GAM_NETWORK_CODES="31083078,22706375620,98765432"
 ```
 
-All tools accept an optional `network_code` parameter. When omitted, the first (default) network is used. The same service account credentials are shared across all networks — just ensure the service account email has been added as a user in each network.
+All tools accept an optional `network_code` parameter, as a string or a number. When omitted, the first (default) network is used. The same service account credentials are shared across all networks — just ensure the service account email has been added as a user in each network.
 
 For Claude Code MCP configuration:
 

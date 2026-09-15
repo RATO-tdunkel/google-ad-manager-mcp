@@ -2,7 +2,10 @@
 
 import logging
 from typing import Optional
+
 from googleads import ad_manager, oauth2
+
+from .utils import IdParam, normalize_id
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +110,12 @@ def is_gam_client_initialized() -> bool:
     return _default_network_code is not None
 
 
-def get_gam_client(network_code: Optional[str] = None) -> GAMClient:
+def get_gam_client(network_code: IdParam = None) -> GAMClient:
     """Get a GAM client instance for the given network code.
 
     Args:
-        network_code: Optional network code. If not provided, uses the default network.
+        network_code: Optional network code, as a string or a number. If not
+            provided, uses the default network.
 
     Returns:
         The GAM client instance for the requested network
@@ -125,7 +129,7 @@ def get_gam_client(network_code: Optional[str] = None) -> GAMClient:
             "GAM client not initialized. Call init_gam_client() first."
         )
 
-    target_code = network_code or _default_network_code
+    target_code = normalize_id(network_code) or _default_network_code
 
     if target_code not in _allowed_network_codes:
         raise ValueError(
