@@ -1,12 +1,12 @@
 """Reporting tools for Google Ad Manager."""
 
-import logging
-import time
 import gzip
 import io
-from typing import Optional, List
+import logging
+import time
+from typing import List, Optional
+
 from ..client import get_gam_client
-from ..utils import safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,11 @@ DATE_RANGE_TYPES = {
     "REACH_LIFETIME": "REACH_LIFETIME",
     "CUSTOM_DATE": "CUSTOM_DATE",
 }
+
+# Ad unit views: control which levels of the ad unit hierarchy a report resolves.
+# GAM defaults to TOP_LEVEL when adUnitView is omitted, which collapses every
+# descendant into its top-level ancestor.
+AD_UNIT_VIEWS = ("TOP_LEVEL", "FLAT", "HIERARCHICAL")
 
 
 def run_delivery_report(
@@ -141,6 +146,7 @@ def run_inventory_report(
     end_day: Optional[int] = None,
     ad_unit_id: Optional[str] = None,
     include_date_breakdown: bool = True,
+    ad_unit_view: str = "TOP_LEVEL",
     timeout_seconds: int = 120,
     network_code: Optional[str] = None
 ) -> dict:
@@ -159,6 +165,13 @@ def run_inventory_report(
         end_day: End date day 1-31 (for CUSTOM_DATE)
         ad_unit_id: Optional ad unit ID to filter by
         include_date_breakdown: If True, includes daily breakdown (default: True)
+        ad_unit_view: Which levels of the ad unit hierarchy to resolve (default: TOP_LEVEL).
+            - TOP_LEVEL: only top-level ad units; descendants roll up into their
+              top-level ancestor, so AD_UNIT_NAME yields one row per top-level unit
+            - FLAT: every ad unit, leaf units included, as its own row, with
+              AD_UNIT_NAME holding the full parent path
+            - HIERARCHICAL: the same rows as FLAT, but with one column per hierarchy
+              level instead of a single combined AD_UNIT_NAME / AD_UNIT_ID column
         timeout_seconds: Maximum time to wait for report (default: 120)
         network_code: Optional GAM network code. Uses default if not provided.
 
@@ -191,6 +204,7 @@ def run_inventory_report(
         end_month=end_month,
         end_day=end_day,
         filter_statement=filter_statement,
+        ad_unit_view=ad_unit_view,
         timeout_seconds=timeout_seconds,
         network_code=network_code
     )
@@ -207,6 +221,7 @@ def run_custom_report(
     end_month: Optional[int] = None,
     end_day: Optional[int] = None,
     filter_statement: Optional[str] = None,
+    ad_unit_view: str = "TOP_LEVEL",
     timeout_seconds: int = 120,
     network_code: Optional[str] = None
 ) -> dict:
@@ -231,12 +246,25 @@ def run_custom_report(
         end_month: End month (1-12) for CUSTOM_DATE range
         end_day: End day (1-31) for CUSTOM_DATE range
         filter_statement: Optional filter (e.g., "ORDER_ID = 12345")
+        ad_unit_view: Which levels of the ad unit hierarchy to resolve (default: TOP_LEVEL).
+            - TOP_LEVEL: only top-level ad units; descendants roll up into their
+              top-level ancestor, so AD_UNIT_NAME yields one row per top-level unit
+            - FLAT: every ad unit, leaf units included, as its own row, with
+              AD_UNIT_NAME holding the full parent path
+            - HIERARCHICAL: the same rows as FLAT, but with one column per hierarchy
+              level instead of a single combined AD_UNIT_NAME / AD_UNIT_ID column
         timeout_seconds: Maximum seconds to wait for report completion
         network_code: Optional GAM network code. Uses default if not provided.
 
     Returns:
         dict with report data including column headers and data rows
     """
+    if ad_unit_view not in AD_UNIT_VIEWS:
+        return {
+            "error": f"Invalid ad_unit_view '{ad_unit_view}'. "
+                     f"Valid values: {', '.join(AD_UNIT_VIEWS)}"
+        }
+
     client = get_gam_client(network_code=network_code)
     report_service = client.get_service('ReportService')
 
@@ -253,6 +281,7 @@ def run_custom_report(
         'dimensions': dimensions,
         'columns': columns,
         'dateRangeType': date_range_type,
+        'adUnitView': ad_unit_view,
     }
 
     # Add custom date range if specified
@@ -295,7 +324,7 @@ def run_custom_report(
                 break
             elif status == 'FAILED':
                 return {
-                    "error": f"Report job failed",
+                    "error": "Report job failed",
                     "job_id": report_job_id,
                     "status": status
                 }
@@ -335,6 +364,7 @@ def run_custom_report(
             "date_range_type": date_range_type,
             "dimensions": dimensions,
             "columns": columns,
+            "ad_unit_view": ad_unit_view,
             "row_count": len(rows) - 1 if rows else 0,  # Exclude header row
             "headers": rows[0] if rows else [],
             "data": rows[1:] if rows else [],

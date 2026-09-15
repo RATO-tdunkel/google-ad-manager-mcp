@@ -417,6 +417,12 @@ npx @modelcontextprotocol/inspector http://localhost:8000/mcp
 | `run_inventory_report` | Generate inventory report (ad requests, fill rate) |
 | `run_custom_report` | Generate custom report with specified dimensions and metrics |
 
+`run_inventory_report` and `run_custom_report` accept an `ad_unit_view` parameter
+(`TOP_LEVEL`, `FLAT`, `HIERARCHICAL`) that controls which levels of the ad unit
+hierarchy a report resolves. The default `TOP_LEVEL` rolls every descendant up into
+its top-level ancestor, so `AD_UNIT_NAME` returns one row per top-level ad unit; use
+`FLAT` or `HIERARCHICAL` to report on leaf ad units.
+
 ### Workflow Tools
 
 | Tool | Description |

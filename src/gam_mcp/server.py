@@ -1000,6 +1000,7 @@ def run_inventory_report(
     end_day: Optional[int] = None,
     ad_unit_id: Optional[str] = None,
     include_date_breakdown: bool = True,
+    ad_unit_view: str = "TOP_LEVEL",
     timeout_seconds: int = 120,
     network_code: Optional[str] = None
 ) -> str:
@@ -1017,6 +1018,19 @@ def run_inventory_report(
         end_day: End date day 1-31 (for CUSTOM_DATE)
         ad_unit_id: Optional ad unit ID to filter by
         include_date_breakdown: If True, includes daily breakdown (default: True)
+        ad_unit_view: Which levels of the ad unit hierarchy the report resolves.
+            Only affects reports using the AD_UNIT_ID / AD_UNIT_NAME dimensions.
+            - TOP_LEVEL (default): only top-level ad units are returned; the metrics
+              of every descendant roll up into its top-level ancestor, so AD_UNIT_NAME
+              yields exactly one row per top-level ad unit. This is what GAM applies
+              when adUnitView is omitted.
+            - FLAT: every ad unit is returned as its own row, leaf ad units included.
+              AD_UNIT_NAME then holds the full path, e.g.
+              "Site (12345678) >> Desktop (...) >> Sport (...) >> details_ad_1 (...)".
+              Use this to report on placement-level inventory.
+            - HIERARCHICAL: the same rows as FLAT, but AD_UNIT_NAME / AD_UNIT_ID are
+              expanded into one column per hierarchy level ("Ad unit 1" ... "Ad unit N",
+              "Ad unit ID 1" ... "Ad unit ID N") instead of a single combined column.
         timeout_seconds: Maximum time to wait for report (default: 120)
         network_code: Optional GAM network code to target a specific network.
             If not provided, uses the default network.
@@ -1034,6 +1048,7 @@ def run_inventory_report(
         end_day=end_day,
         ad_unit_id=ad_unit_id,
         include_date_breakdown=include_date_breakdown,
+        ad_unit_view=ad_unit_view,
         timeout_seconds=timeout_seconds,
         network_code=network_code
     )
@@ -1052,6 +1067,7 @@ def run_custom_report(
     end_month: Optional[int] = None,
     end_day: Optional[int] = None,
     filter_statement: Optional[str] = None,
+    ad_unit_view: str = "TOP_LEVEL",
     timeout_seconds: int = 120,
     network_code: Optional[str] = None
 ) -> str:
@@ -1076,6 +1092,19 @@ def run_custom_report(
         end_month: End month (1-12) for CUSTOM_DATE range
         end_day: End day (1-31) for CUSTOM_DATE range
         filter_statement: Optional filter (e.g., "ORDER_ID = 12345")
+        ad_unit_view: Which levels of the ad unit hierarchy the report resolves.
+            Only affects reports using the AD_UNIT_ID / AD_UNIT_NAME dimensions.
+            - TOP_LEVEL (default): only top-level ad units are returned; the metrics
+              of every descendant roll up into its top-level ancestor, so AD_UNIT_NAME
+              yields exactly one row per top-level ad unit. This is what GAM applies
+              when adUnitView is omitted.
+            - FLAT: every ad unit is returned as its own row, leaf ad units included.
+              AD_UNIT_NAME then holds the full path, e.g.
+              "Site (12345678) >> Desktop (...) >> Sport (...) >> details_ad_1 (...)".
+              Use this to report on placement-level inventory.
+            - HIERARCHICAL: the same rows as FLAT, but AD_UNIT_NAME / AD_UNIT_ID are
+              expanded into one column per hierarchy level ("Ad unit 1" ... "Ad unit N",
+              "Ad unit ID 1" ... "Ad unit ID N") instead of a single combined column.
         timeout_seconds: Maximum seconds to wait for report completion
         network_code: Optional GAM network code to target a specific network.
             If not provided, uses the default network.
@@ -1106,6 +1135,7 @@ def run_custom_report(
         end_month=end_month,
         end_day=end_day,
         filter_statement=filter_statement,
+        ad_unit_view=ad_unit_view,
         timeout_seconds=timeout_seconds,
         network_code=network_code
     )
