@@ -315,3 +315,25 @@ class TestNetworkCodeNormalization:
         """Test validation still rejects networks outside the allowed list."""
         with pytest.raises(ValueError, match="is not allowed"):
             get_gam_client(network_code=99999999)
+
+
+class TestNetworkSettings:
+    """The network's own currency and time zone back the line item defaults."""
+
+    @patch("gam_mcp.client.oauth2.GoogleServiceAccountClient")
+    @patch("gam_mcp.client.ad_manager.AdManagerClient")
+    def test_reads_and_caches_network_settings(self, mock_ad_manager, mock_oauth2):
+        """Test settings are fetched once and reused."""
+        service = MagicMock()
+        service.getCurrentNetwork.return_value = {
+            "currencyCode": "CHF", "timeZone": "Europe/Zurich",
+        }
+        mock_ad_manager.return_value.GetService.return_value = service
+
+        client = GAMClient(credentials_path="/creds.json", network_code="123")
+
+        assert client.get_network_settings() == {
+            "currency_code": "CHF", "time_zone": "Europe/Zurich",
+        }
+        assert client.get_network_settings()["currency_code"] == "CHF"
+        service.getCurrentNetwork.assert_called_once()

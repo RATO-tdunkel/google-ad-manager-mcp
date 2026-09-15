@@ -5,7 +5,7 @@ from typing import Optional
 
 from googleads import ad_manager, oauth2
 
-from .utils import IdParam, normalize_id
+from .utils import IdParam, normalize_id, safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ class GAMClient:
         self.application_name = application_name
         self._client: Optional[ad_manager.AdManagerClient] = None
         self._api_version = api_version or self.DEFAULT_API_VERSION
+        self._network_settings: Optional[dict] = None
 
     def _get_client(self) -> ad_manager.AdManagerClient:
         """Get or create the Ad Manager client."""
@@ -82,6 +83,24 @@ class GAMClient:
             A new StatementBuilder instance
         """
         return ad_manager.StatementBuilder(version=self._api_version)
+
+    def get_network_settings(self) -> dict:
+        """Get the network's own currency and time zone.
+
+        Used as the default for line item currency and end dates, so the values
+        follow the network instead of a hardcoded locale. Fetched once per
+        client and cached.
+
+        Returns:
+            dict with 'currency_code' and 'time_zone'
+        """
+        if self._network_settings is None:
+            network = self.get_service('NetworkService').getCurrentNetwork()
+            self._network_settings = {
+                'currency_code': safe_get(network, 'currencyCode'),
+                'time_zone': safe_get(network, 'timeZone'),
+            }
+        return self._network_settings
 
     def get_data_downloader(self):
         """Get the data downloader for reports.

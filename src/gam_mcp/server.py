@@ -208,7 +208,7 @@ def create_line_item(
     goal_impressions: int = 100000,
     creative_sizes: Optional[str] = None,
     cost_per_unit_micro: int = 0,
-    currency_code: str = "MAD",
+    currency_code: Optional[str] = None,
     network_code: Union[str, int, None] = None
 ) -> str:
     """Create a new line item for an order.
@@ -235,8 +235,8 @@ def create_line_item(
         goal_impressions: Impression goal (default: 100000)
         creative_sizes: JSON string of sizes, e.g. '[{"width": 300, "height": 250}, {"width": 728, "height": 90}]'
                        If not provided, uses defaults: 300x250, 300x600, 728x90, 1000x250
-        cost_per_unit_micro: Cost per unit in micro amounts (e.g., 1000000 = 1 MAD)
-        currency_code: Currency code (default: MAD)
+        cost_per_unit_micro: Cost per unit in micro amounts (e.g., 1000000 = 1.00 in the network currency)
+        currency_code: Currency code. Defaults to the network's own currency.
         network_code: Optional GAM network code to target a specific network.
             If not provided, uses the default network.
 
@@ -332,7 +332,7 @@ def update_line_item(
             Lower numbers = higher priority.
             SPONSORSHIP: 4, STANDARD: 6-10, NETWORK: 12, BULK: 12, PRICE_PRIORITY: 12, HOUSE: 16
         cost_per_unit_micro: Cost per unit in micro amounts (e.g., 1000000 = 1 currency unit)
-        currency_code: Currency code (e.g., MAD, USD, EUR)
+        currency_code: Currency code (e.g., CHF, EUR, USD)
         goal_impressions: Impression goal (updates primaryGoal.units)
         end_year: End date year
         end_month: End date month (1-12)
@@ -438,21 +438,23 @@ def archive_line_item(line_item_id: int, network_code: Union[str, int, None] = N
 
 
 @mcp.tool()
-def approve_line_item(line_item_id: int, network_code: Union[str, int, None] = None) -> str:
-    """Approve a line item that requires approval.
+def approve_order(order_id: int, network_code: Union[str, int, None] = None) -> str:
+    """Approve an order so its line items can start delivering.
 
-    This is used when the approval workflow is enabled in Google Ad Manager.
-    Line items in NEEDS_APPROVAL status can be approved to allow delivery.
+    Approval is an order level operation in Google Ad Manager - there is no
+    line item equivalent - and it affects every line item on the order.
+    Approving requires an account role that permits it; a Trafficker role
+    cannot approve orders.
 
     Args:
-        line_item_id: The line item ID to approve
+        order_id: The order ID to approve
         network_code: Optional GAM network code to target a specific network.
             If not provided, uses the default network.
 
-    Returns the result of the approve action including new status.
+    Returns the order's status after approval.
     """
     init_client()
-    result = line_items.approve_line_item(line_item_id=line_item_id, network_code=normalize_id(network_code))
+    result = orders.approve_order(order_id=order_id, network_code=normalize_id(network_code))
     return json.dumps(result, indent=2)
 
 

@@ -441,3 +441,81 @@ class TestVerifyOrderSetup:
         result = verification.verify_order_setup(order_id=123)
 
         assert "error" in result["line_items"][0]
+
+
+class TestVerificationWithZeepObjects:
+    """Regression tests: the verification tools must handle zeep objects.
+
+    The GAM API returns zeep objects, which have no ``.get()`` method. The
+    existing tests all use plain dicts, where ``.get()`` happens to work, so
+    these crashes only showed up against the live API.
+    """
+
+    @patch("gam_mcp.tools.verification.get_gam_client")
+    def test_verify_line_item_setup(self, mock_get_client, mock_zeep_object):
+        """Test verify_line_item_setup returns a result instead of raising."""
+        line_item = mock_zeep_object({
+            "id": 123, "name": "LI", "status": "READY", "orderId": 9,
+            "lineItemType": "STANDARD",
+            "creativePlaceholders": [mock_zeep_object({
+                "size": mock_zeep_object({"width": 300, "height": 250})
+            })],
+        })
+        client = MagicMock()
+        mock_get_client.return_value = client
+        li_service = MagicMock()
+        li_service.getLineItemsByStatement.return_value = {"results": [line_item]}
+        lica_service = MagicMock()
+        lica_service.getLineItemCreativeAssociationsByStatement.return_value = {"results": []}
+        client.get_service.side_effect = lambda name: (
+            li_service if name == "LineItemService" else lica_service
+        )
+        client.create_statement.return_value = MagicMock()
+
+        result = verification.verify_line_item_setup(line_item_id=123)
+
+        assert "error" not in result
+        assert result["line_item"]["type"] == "STANDARD"
+        assert "300x250" in [p["size_string"] for p in result["creative_placeholders"]]
+
+    @patch("gam_mcp.tools.verification.get_gam_client")
+    def test_verify_order_setup(self, mock_get_client, mock_zeep_object):
+        """Test verify_order_setup reads advertiserId off a zeep object."""
+        order = mock_zeep_object({
+            "id": 456, "name": "Order", "status": "APPROVED", "advertiserId": 789,
+        })
+        client = MagicMock()
+        mock_get_client.return_value = client
+        order_service = MagicMock()
+        order_service.getOrdersByStatement.return_value = {"results": [order]}
+        li_service = MagicMock()
+        li_service.getLineItemsByStatement.return_value = {}
+        client.get_service.side_effect = lambda name: (
+            order_service if name == "OrderService" else li_service
+        )
+        client.create_statement.return_value = MagicMock()
+
+        result = verification.verify_order_setup(order_id=456)
+
+        assert "error" not in result
+        assert result["advertiser_id"] == 789
+
+    @patch("gam_mcp.tools.verification.get_gam_client")
+    def test_check_delivery_status_still_works(self, mock_get_client, mock_zeep_object):
+        """Test the one verification tool that was never broken stays working."""
+        line_item = mock_zeep_object({
+            "id": 123, "name": "LI", "status": "PAUSED", "orderId": 9,
+            "stats": mock_zeep_object({"impressionsDelivered": 10, "clicksDelivered": 1}),
+            "primaryGoal": mock_zeep_object({"units": 100, "unitType": "IMPRESSIONS"}),
+        })
+        client = MagicMock()
+        mock_get_client.return_value = client
+        service = MagicMock()
+        service.getLineItemsByStatement.return_value = {"results": [line_item]}
+        client.get_service.return_value = service
+        client.create_statement.return_value = MagicMock()
+
+        result = verification.check_line_item_delivery_status(line_item_id=123)
+
+        assert "error" not in result
+        assert result["status"] == "PAUSED"

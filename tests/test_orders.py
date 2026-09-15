@@ -293,3 +293,57 @@ class TestFindOrCreateOrder:
 
         assert result["created"] is True
         mock_create.assert_called_once()
+
+
+class TestApproveOrder:
+    """Approval is an order level action in GAM, not a line item one."""
+
+    @staticmethod
+    def _client(mock_get_client, num_changes=1):
+        client = MagicMock()
+        mock_get_client.return_value = client
+        service = MagicMock()
+        service.performOrderAction.return_value = {"numChanges": num_changes}
+        service.getOrdersByStatement.return_value = {
+            "results": [{"id": 456, "name": "Order", "status": "APPROVED"}]
+        }
+        client.get_service.return_value = service
+        client.create_statement.return_value = MagicMock()
+        return service
+
+    @patch("gam_mcp.tools.orders.get_gam_client")
+    def test_approves_via_order_service(self, mock_get_client):
+        """Test the ApproveOrders action is sent and the new status returned."""
+        service = self._client(mock_get_client)
+
+        result = orders.approve_order(order_id=456)
+
+        assert result["success"] is True
+        assert result["status"] == "APPROVED"
+        assert service.performOrderAction.call_args[0][0] == {"xsi_type": "ApproveOrders"}
+
+    @patch("gam_mcp.tools.orders.get_gam_client")
+    def test_no_change_is_reported_as_error(self, mock_get_client):
+        """Test an order GAM did not change comes back as an error."""
+        self._client(mock_get_client, num_changes=0)
+
+        result = orders.approve_order(order_id=456)
+
+        assert "error" in result
+
+    @patch("gam_mcp.tools.orders.get_gam_client")
+    def test_permission_denied_becomes_error(self, mock_get_client):
+        """Test a server fault is returned as an error instead of propagating."""
+        client = MagicMock()
+        mock_get_client.return_value = client
+        service = MagicMock()
+        service.performOrderAction.side_effect = Exception(
+            "[OrderActionError.PERMISSION_DENIED @ id; trigger:'456']"
+        )
+        client.get_service.return_value = service
+        client.create_statement.return_value = MagicMock()
+
+        result = orders.approve_order(order_id=456)
+
+        assert "error" in result
+        assert "PERMISSION_DENIED" in result["error"]

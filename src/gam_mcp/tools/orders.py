@@ -305,3 +305,50 @@ def find_or_create_order(
     if "error" not in result:
         result["created"] = True
     return result
+
+
+def approve_order(order_id: int, network_code: Optional[str] = None) -> dict:
+    """Approve an order so its line items can start delivering.
+
+    Approval is an order level operation in GAM; LineItemService has no
+    equivalent action. Approving an order affects all of its line items.
+
+    Args:
+        order_id: The order ID to approve
+        network_code: Optional GAM network code. Uses default if not provided.
+
+    Returns:
+        dict with the order's status after approval, or an error dict if GAM
+        refuses (for example when the account lacks approval rights)
+    """
+    client = get_gam_client(network_code=network_code)
+    order_service = client.get_service('OrderService')
+
+    statement = client.create_statement()
+    statement = statement.Where("id = :id").WithBindVariable('id', order_id)
+
+    try:
+        result = order_service.performOrderAction(
+            {'xsi_type': 'ApproveOrders'},
+            statement.ToStatement()
+        )
+    except Exception as e:
+        logger.error(f"Approving order {order_id} failed: {e}")
+        return {"error": f"GAM rejected the approval of order {order_id}: {e}"}
+
+    if not result or safe_get(result, 'numChanges', 0) < 1:
+        return {
+            "error": f"Order {order_id} was not approved. It may already be "
+                     "approved, or not be in a state that allows approval."
+        }
+
+    response = order_service.getOrdersByStatement(statement.ToStatement())
+    order = response['results'][0] if safe_get(response, 'results') else None
+
+    return {
+        "success": True,
+        "id": order_id,
+        "name": safe_get(order, 'name'),
+        "status": safe_get(order, 'status'),
+        "message": f"Order {order_id} approved successfully"
+    }

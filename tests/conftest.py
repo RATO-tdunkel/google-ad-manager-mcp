@@ -19,7 +19,13 @@ def mock_zeep_object():
     """Create a mock zeep object for testing utility functions."""
 
     class MockZeepObject:
-        """Mock zeep object with __values__ attribute."""
+        """Mock zeep object.
+
+        Mirrors the parts of zeep's CompoundValue that the tools rely on:
+        attribute access, item get/set and ``in``. Deliberately has **no**
+        ``.get()`` method - zeep objects raise AttributeError for it, and
+        treating them like dicts is a bug this fixture is meant to catch.
+        """
 
         def __init__(self, data: dict):
             self.__values__ = data
@@ -28,6 +34,13 @@ def mock_zeep_object():
 
         def __getitem__(self, key):
             return self.__values__[key]
+
+        def __setitem__(self, key, value):
+            self.__values__[key] = value
+            setattr(self, key, value)
+
+        def __contains__(self, key):
+            return key in self.__values__
 
     return MockZeepObject
 

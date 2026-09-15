@@ -527,6 +527,22 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
 
+## Live verification
+
+The test suite mocks the SOAP layer end to end, so it needs no credentials but
+also cannot catch Google Ad Manager API drift. `scripts/verify_live.py`
+exercises the read and write paths against a real GAM **test** network:
+
+```bash
+GAM_CREDENTIALS_PATH=/path/to/sa.json \
+GAM_TEST_NETWORK_CODE=12345678 \
+python scripts/verify_live.py
+```
+
+It refuses to run unless GAM reports the network as a test network, prefixes
+everything it creates with `MCP-VERIFY`, and archives it again afterwards. Worth
+running after every API version bump.
+
 ## API Version
 
 Uses Google Ad Manager SOAP API version `v202608`. Override it with the
