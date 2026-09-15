@@ -101,7 +101,6 @@ dmypy.json
 
 # pyright
 pyrightconfig.json
-uv.lock
 
 # Claude Code local settings (machine-specific, must not be committed)
 .claude/settings.local.json

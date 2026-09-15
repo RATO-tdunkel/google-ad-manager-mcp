@@ -2,6 +2,7 @@
 
 import base64
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Optional
@@ -10,6 +11,52 @@ from ..client import get_gam_client
 from ..utils import safe_get
 
 logger = logging.getLogger(__name__)
+
+# Image types Ad Manager accepts for an ImageCreative. upload_creative reads a
+# caller-supplied path, so without this allowlist any local file -- a service
+# account key, an .env -- could be read and shipped to GAM as creative bytes.
+ALLOWED_CREATIVE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".gif"})
+
+# Optional hard boundary: when GAM_CREATIVE_ROOT is set, creatives may only be
+# read from inside that directory.
+CREATIVE_ROOT_ENV = "GAM_CREATIVE_ROOT"
+
+
+def resolve_creative_path(file_path: str) -> tuple[Optional[Path], Optional[str]]:
+    """Resolve a creative path, rejecting anything that is not an image.
+
+    Args:
+        file_path: Caller-supplied path to an image file
+
+    Returns:
+        Tuple of (resolved path, error message). Exactly one is not None.
+    """
+    path = Path(file_path).expanduser()
+
+    if path.suffix.lower() not in ALLOWED_CREATIVE_SUFFIXES:
+        return None, (
+            f"Refusing to read '{file_path}': creatives must be one of "
+            f"{', '.join(sorted(ALLOWED_CREATIVE_SUFFIXES))}"
+        )
+
+    try:
+        resolved = path.resolve()
+    except OSError as e:
+        return None, f"Cannot resolve path '{file_path}': {e}"
+
+    root = os.environ.get(CREATIVE_ROOT_ENV)
+    if root:
+        try:
+            resolved.relative_to(Path(root).expanduser().resolve())
+        except ValueError:
+            return None, (
+                f"Refusing to read '{file_path}': outside {CREATIVE_ROOT_ENV} ({root})"
+            )
+
+    if not resolved.is_file():
+        return None, f"File not found: {file_path}"
+
+    return resolved, None
 
 
 def extract_size_from_filename(filename: str) -> tuple[Optional[int], Optional[int]]:
@@ -53,11 +100,10 @@ def upload_creative(
     client = get_gam_client(network_code=network_code)
     creative_service = client.get_service('CreativeService')
 
-    path = Path(file_path)
+    path, path_error = resolve_creative_path(file_path)
+    if path_error:
+        return {"error": path_error}
     filename = path.name
-
-    if not path.exists():
-        return {"error": f"File not found: {file_path}"}
 
     # Read and encode image
     with open(path, 'rb') as f:

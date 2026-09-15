@@ -208,3 +208,52 @@ class TestServerInitialization:
 
         # Should not try to initialize again
         mock_init.assert_not_called()
+
+
+class TestAuthDoesNotFailOpen:
+    """Unreadable headers must deny on HTTP, not fall through."""
+
+    @pytest.fixture
+    def middleware(self):
+        """Create middleware instance."""
+        return BearerAuthMiddleware()
+
+    @pytest.mark.asyncio
+    @patch("gam_mcp.server.AUTH_TOKEN", "secret-token")
+    @patch("gam_mcp.server.TRANSPORT", "http")
+    @patch("gam_mcp.server.get_http_headers")
+    async def test_denies_when_headers_unreadable_on_http(self, mock_headers, middleware):
+        """Test a header failure on HTTP is rejected instead of skipping auth."""
+        mock_headers.side_effect = RuntimeError("no request context")
+        call_next = AsyncMock()
+
+        from fastmcp.exceptions import ToolError
+        with pytest.raises(ToolError):
+            await middleware.on_call_tool(MagicMock(), call_next)
+
+        call_next.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("gam_mcp.server.AUTH_TOKEN", "secret-token")
+    @patch("gam_mcp.server.TRANSPORT", "stdio")
+    @patch("gam_mcp.server.get_http_headers")
+    async def test_allows_when_headers_unreadable_on_stdio(self, mock_headers, middleware):
+        """Test stdio still works - a local pipe carries no HTTP headers."""
+        mock_headers.side_effect = RuntimeError("no request context")
+        call_next = AsyncMock(return_value="success")
+
+        assert await middleware.on_call_tool(MagicMock(), call_next) == "success"
+
+
+class TestListenAddressDefault:
+    """The server must not listen on every interface by default."""
+
+    def test_defaults_to_loopback(self):
+        """Test the HTTP transport binds loopback unless told otherwise."""
+        import inspect
+
+        from gam_mcp import server
+
+        source = inspect.getsource(server.main)
+        assert 'os.environ.get("GAM_MCP_HOST", "127.0.0.1")' in source
+        assert "0.0.0.0" not in source

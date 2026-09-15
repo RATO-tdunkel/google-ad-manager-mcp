@@ -191,7 +191,10 @@ def run_inventory_report(
 
     filter_statement = None
     if ad_unit_id:
-        filter_statement = f"AD_UNIT_ID = {ad_unit_id}"
+        # Interpolated into a PQL WHERE clause, so it has to be a plain number.
+        if not str(ad_unit_id).strip().isdigit():
+            return {"error": f"ad_unit_id must be numeric, got '{ad_unit_id}'"}
+        filter_statement = f"AD_UNIT_ID = {str(ad_unit_id).strip()}"
 
     return run_custom_report(
         dimensions=dimensions,

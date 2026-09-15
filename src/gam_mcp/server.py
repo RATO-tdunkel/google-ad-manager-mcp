@@ -30,6 +30,11 @@ from .utils import normalize_id
 # Authentication token - set via environment variable or generate random
 AUTH_TOKEN = os.environ.get("GAM_MCP_AUTH_TOKEN", None)
 
+# Transport in use, set by main(). stdio is a local pipe with no HTTP headers
+# and therefore nothing to authenticate; any other transport must authenticate,
+# and must refuse rather than fall through when headers cannot be read.
+TRANSPORT = "stdio"
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -65,9 +70,14 @@ class BearerAuthMiddleware(Middleware):
         try:
             headers = get_http_headers()
             auth_header = headers.get("authorization", "")
-        except Exception:
-            # If we can't get headers (e.g., stdio transport), skip auth
-            return await call_next(context)
+        except Exception as e:
+            if TRANSPORT == "stdio":
+                # Local pipe, there are no HTTP headers to read.
+                return await call_next(context)
+            # Deny. Falling through here dropped authentication entirely
+            # whenever header parsing hiccupped on an HTTP transport.
+            logger.warning(f"Auth failed: could not read request headers ({e})")
+            raise ToolError("Access denied: could not read request headers")
 
         if not auth_header:
             logger.warning("Auth failed: Missing Authorization header")
@@ -1330,8 +1340,12 @@ def main():
     global AUTH_TOKEN
 
     # Get transport mode from environment (default: stdio for CLI usage)
+    global TRANSPORT
     transport = os.environ.get("GAM_MCP_TRANSPORT", "stdio").lower()
-    host = os.environ.get("GAM_MCP_HOST", "0.0.0.0")
+    TRANSPORT = transport
+    # Loopback by default: this process holds credentials for a live ad network,
+    # so listening on every interface has to be a deliberate choice.
+    host = os.environ.get("GAM_MCP_HOST", "127.0.0.1")
     port = int(os.environ.get("GAM_MCP_PORT", "8000"))
 
     if transport == "stdio":

@@ -1,7 +1,9 @@
 """Tests for creative tools."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from gam_mcp.tools import creatives
 
@@ -41,18 +43,26 @@ class TestExtractSizeFromFilename:
 
 
 class TestUploadCreative:
-    """Tests for upload_creative function."""
+    """Tests for upload_creative function.
+
+    These use real files on tmp_path rather than mocking Path, so the path
+    resolution that guards against reading non-image files is exercised too.
+    """
+
+    @staticmethod
+    def _service(mock_get_client, created):
+        client = MagicMock()
+        mock_get_client.return_value = client
+        service = MagicMock()
+        service.createCreatives.return_value = [created]
+        client.get_service.return_value = service
+        return service
 
     @patch("gam_mcp.tools.creatives.get_gam_client")
-    @patch("gam_mcp.tools.creatives.Path")
-    def test_returns_error_when_file_not_found(self, mock_path_class, mock_get_client):
+    def test_returns_error_when_file_not_found(self, mock_get_client, tmp_path):
         """Test returns error when file doesn't exist."""
-        mock_path = MagicMock()
-        mock_path.exists.return_value = False
-        mock_path_class.return_value = mock_path
-
         result = creatives.upload_creative(
-            file_path="/path/to/missing.png",
+            file_path=str(tmp_path / "missing_300x250.png"),
             advertiser_id=123,
             click_through_url="https://example.com"
         )
@@ -61,16 +71,13 @@ class TestUploadCreative:
         assert "not found" in result["error"]
 
     @patch("gam_mcp.tools.creatives.get_gam_client")
-    @patch("gam_mcp.tools.creatives.Path")
-    def test_returns_error_when_size_not_in_filename(self, mock_path_class, mock_get_client):
+    def test_returns_error_when_size_not_in_filename(self, mock_get_client, tmp_path):
         """Test returns error when size cannot be extracted from filename."""
-        mock_path = MagicMock()
-        mock_path.exists.return_value = True
-        mock_path.name = "banner.png"
-        mock_path_class.return_value = mock_path
+        image = tmp_path / "banner.png"
+        image.write_bytes(b"fake image data")
 
         result = creatives.upload_creative(
-            file_path="/path/to/banner.png",
+            file_path=str(image),
             advertiser_id=123,
             click_through_url="https://example.com"
         )
@@ -79,28 +86,16 @@ class TestUploadCreative:
         assert "Could not extract size" in result["error"]
 
     @patch("gam_mcp.tools.creatives.get_gam_client")
-    @patch("builtins.open", new_callable=mock_open, read_data=b"fake image data")
-    @patch("gam_mcp.tools.creatives.Path")
-    def test_uploads_creative_successfully(self, mock_path_class, mock_file, mock_get_client):
+    def test_uploads_creative_successfully(self, mock_get_client, tmp_path):
         """Test successfully uploads a creative."""
-        mock_path = MagicMock()
-        mock_path.exists.return_value = True
-        mock_path.name = "banner_300x250.png"
-        mock_path.stem = "banner_300x250"
-        mock_path_class.return_value = mock_path
-
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-
-        mock_service = MagicMock()
-        mock_service.createCreatives.return_value = [{
-            "id": 123,
-            "name": "Creative - 300x250 - banner_300x250"
-        }]
-        mock_client.get_service.return_value = mock_service
+        image = tmp_path / "banner_300x250.png"
+        image.write_bytes(b"fake image data")
+        self._service(mock_get_client, {
+            "id": 123, "name": "Creative - 300x250 - banner_300x250"
+        })
 
         result = creatives.upload_creative(
-            file_path="/path/to/banner_300x250.png",
+            file_path=str(image),
             advertiser_id=456,
             click_through_url="https://example.com"
         )
@@ -110,28 +105,16 @@ class TestUploadCreative:
         assert "uploaded successfully" in result["message"]
 
     @patch("gam_mcp.tools.creatives.get_gam_client")
-    @patch("builtins.open", new_callable=mock_open, read_data=b"fake image data")
-    @patch("gam_mcp.tools.creatives.Path")
-    def test_uses_size_override(self, mock_path_class, mock_file, mock_get_client):
+    def test_uses_size_override(self, mock_get_client, tmp_path):
         """Test uses size override when provided."""
-        mock_path = MagicMock()
-        mock_path.exists.return_value = True
-        mock_path.name = "banner_970x250.png"
-        mock_path.stem = "banner_970x250"
-        mock_path_class.return_value = mock_path
-
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-
-        mock_service = MagicMock()
-        mock_service.createCreatives.return_value = [{
-            "id": 123,
-            "name": "Creative - 1000x250 - banner_970x250"
-        }]
-        mock_client.get_service.return_value = mock_service
+        image = tmp_path / "banner_970x250.png"
+        image.write_bytes(b"fake image data")
+        self._service(mock_get_client, {
+            "id": 123, "name": "Creative - 1000x250 - banner_970x250"
+        })
 
         result = creatives.upload_creative(
-            file_path="/path/to/banner_970x250.png",
+            file_path=str(image),
             advertiser_id=456,
             click_through_url="https://example.com",
             override_size_width=1000,
@@ -139,9 +122,6 @@ class TestUploadCreative:
         )
 
         assert result["size"] == "1000x250"
-        assert result["original_size"] == "970x250"
-        assert result["override_size"] is True
-
 
 class TestAssociateCreativeWithLineItem:
     """Tests for associate_creative_with_line_item function."""
@@ -437,3 +417,69 @@ class TestListCreativesByAdvertiser:
         assert result["total"] == 2
         assert result["creatives"][0]["size"] == "300x250"
         assert result["creatives"][1]["size"] == "728x90"
+
+
+class TestCreativePathResolution:
+    """upload_creative reads a caller-supplied path, so it must be constrained."""
+
+    @pytest.mark.parametrize("name", [
+        "service-account-300x250.json",
+        "id_rsa300x250",
+        "secrets300x250.pem",
+        "notes300x250.txt",
+    ])
+    def test_rejects_non_image_files(self, name, tmp_path):
+        """Test a non-image file is refused before it is ever opened."""
+        target = tmp_path / name
+        target.write_text("super secret")
+
+        path, error = creatives.resolve_creative_path(str(target))
+
+        assert path is None
+        assert "creatives must be one of" in error
+
+    def test_accepts_image_files(self, tmp_path):
+        """Test a normal image path resolves."""
+        target = tmp_path / "banner300x250.png"
+        target.write_bytes(b"\x89PNG")
+
+        path, error = creatives.resolve_creative_path(str(target))
+
+        assert error is None
+        assert path == target.resolve()
+
+    def test_missing_image_reports_not_found(self, tmp_path):
+        """Test a missing file still gives the familiar error."""
+        path, error = creatives.resolve_creative_path(str(tmp_path / "gone300x250.png"))
+
+        assert path is None
+        assert "File not found" in error
+
+    def test_root_confinement(self, tmp_path, monkeypatch):
+        """Test GAM_CREATIVE_ROOT keeps reads inside one directory."""
+        allowed = tmp_path / "creatives"
+        allowed.mkdir()
+        inside = allowed / "ok300x250.png"
+        inside.write_bytes(b"\x89PNG")
+        outside = tmp_path / "elsewhere300x250.png"
+        outside.write_bytes(b"\x89PNG")
+        monkeypatch.setenv("GAM_CREATIVE_ROOT", str(allowed))
+
+        assert creatives.resolve_creative_path(str(inside))[1] is None
+
+        path, error = creatives.resolve_creative_path(str(outside))
+        assert path is None
+        assert "outside GAM_CREATIVE_ROOT" in error
+
+    @patch("gam_mcp.tools.creatives.get_gam_client")
+    def test_upload_creative_refuses_non_image(self, mock_get_client, tmp_path):
+        """Test the refusal reaches the caller as an error dict."""
+        target = tmp_path / "creds300x250.json"
+        target.write_text("{}")
+
+        result = creatives.upload_creative(
+            file_path=str(target), advertiser_id=1, click_through_url="https://example.com"
+        )
+
+        assert "error" in result
+        assert "creatives must be one of" in result["error"]

@@ -70,7 +70,8 @@ The server uses environment variables for configuration:
 | `GAM_CREDENTIALS_PATH` | Path to service account JSON | **Yes** |
 | `GAM_NETWORK_CODES` | Comma-separated list of GAM network codes (first is the default) | **Yes** |
 | `GAM_MCP_TRANSPORT` | Transport mode: `stdio` or `http` | No (default: `stdio`) |
-| `GAM_MCP_HOST` | Server host (HTTP mode only) | No (default: `0.0.0.0`) |
+| `GAM_MCP_HOST` | Server host (HTTP mode only) | No (default: `127.0.0.1`) |
+| `GAM_CREATIVE_ROOT` | Confine `upload_creative` to this directory | No |
 | `GAM_MCP_PORT` | Server port (HTTP mode only) | No (default: `8000`) |
 | `GAM_MCP_AUTH_TOKEN` | Authentication token (HTTP mode only) | No (auto-generated if not set) |
 

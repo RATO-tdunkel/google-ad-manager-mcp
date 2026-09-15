@@ -97,3 +97,35 @@ class TestAdUnitView:
 
         assert "error" in result
         mock_report_client.runReportJob.assert_not_called()
+
+
+class TestAdUnitIdFilter:
+    """ad_unit_id is interpolated into a PQL clause, so it must be numeric."""
+
+    def test_numeric_id_becomes_a_filter(self, mock_report_client):
+        """Test a plain id ends up in the report statement."""
+        reporting.run_inventory_report(ad_unit_id="23367404272")
+
+        query = submitted_query(mock_report_client)
+        assert query["statement"]["query"] == "WHERE AD_UNIT_ID = 23367404272"
+
+    def test_integer_id_is_accepted(self, mock_report_client):
+        """Test the same holds when the client sends a number."""
+        reporting.run_inventory_report(ad_unit_id=23367404272)
+
+        query = submitted_query(mock_report_client)
+        assert query["statement"]["query"] == "WHERE AD_UNIT_ID = 23367404272"
+
+    @pytest.mark.parametrize("value", [
+        "1 OR 1=1",
+        "1; DROP",
+        "abc",
+        "1 AND ORDER_ID = 2",
+    ])
+    def test_non_numeric_id_is_rejected(self, mock_report_client, value):
+        """Test anything that could extend the WHERE clause is refused."""
+        result = reporting.run_inventory_report(ad_unit_id=value)
+
+        assert "error" in result
+        assert "must be numeric" in result["error"]
+        mock_report_client.runReportJob.assert_not_called()

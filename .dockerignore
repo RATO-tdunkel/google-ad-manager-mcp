@@ -1,0 +1,27 @@
+# Keep secrets and local state out of the build context: the image is built
+# with "COPY . .", so anything here would end up in a layer.
+*.json
+!glama.json
+*.pem
+*.key
+*.p12
+.env
+.env.*
+
+.git
+.github
+.venv
+venv
+.claude
+.idea
+.vscode
+
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+dist
+build
+*.egg-info

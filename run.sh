@@ -22,7 +22,7 @@ if [ -z "$GAM_NETWORK_CODE" ]; then
 fi
 
 # Optional configuration with defaults
-export GAM_MCP_HOST="${GAM_MCP_HOST:-0.0.0.0}"
+export GAM_MCP_HOST="${GAM_MCP_HOST:-127.0.0.1}"
 export GAM_MCP_PORT="${GAM_MCP_PORT:-8000}"
 
 echo "Starting Google Ad Manager MCP Server..."

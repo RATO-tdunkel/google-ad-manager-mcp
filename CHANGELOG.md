@@ -43,6 +43,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   purely numeric IDs as JSON numbers, which failed string validation and made
   `network_code` unusable in practice.
 
+### Security
+
+- **`upload_creative` no longer reads arbitrary files.** It took a caller
+  supplied path and checked only that the *filename* contained a `300x250` style
+  size, so any local file - a service account key, an `.env` - could be read,
+  base64 encoded and shipped to Ad Manager as creative bytes. Since the caller
+  is an LLM, and an LLM's input includes attacker-influenceable text (API
+  responses, issue text, web pages), that was a prompt-injection reachable data
+  egress path. Uploads are now restricted to `.jpg`, `.jpeg`, `.png` and `.gif`,
+  and the new `GAM_CREATIVE_ROOT` environment variable confines reads to one
+  directory.
+- **Authentication no longer fails open.** If `get_http_headers()` raised, the
+  bearer token middleware skipped authentication and let the call through. That
+  was meant for stdio, where there are no headers, but the `except Exception`
+  also covered every failure on an HTTP transport. Header failures are now
+  denied unless the transport really is stdio.
+- **`GAM_MCP_HOST` defaults to `127.0.0.1` instead of `0.0.0.0`.** The process
+  holds credentials for a live ad network, so listening on every interface has
+  to be deliberate. **Breaking for HTTP deployments in containers** - set
+  `GAM_MCP_HOST=0.0.0.0` explicitly if you need it.
+- `ad_unit_id` is validated as numeric before being interpolated into the
+  report's PQL `WHERE` clause.
+- Dependencies are pinned: `uv.lock` is committed instead of gitignored, so
+  builds no longer resolve the transitive tree afresh each time.
+- Added `.dockerignore`. The image is built with `COPY . .`, so credentials or
+  `.env` files in the build context would previously end up in a layer.
+
 ### Fixed
 
 - **`update_line_item` applied changes but reported failure.** It treated the
